@@ -1,6 +1,6 @@
 # This, but cursed
 
-A fan-made version of [This](https://github.com/TeamUltroid/Ultroid).
+A fan-made version of [Ultroid](https://github.com/TeamUltroid/Ultroid).
 
 Expect:
 - Weird implementations
