@@ -17,12 +17,17 @@ can opt into (or automatically select) the server-rendered representation.
 from __future__ import annotations
 
 import html as _html
+import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, List, Literal, Optional, Tuple
+from typing import Any, Literal
 from collections.abc import Sequence
+from html.parser import HTMLParser
 
 from telethon import utils as _tl_utils
 from telethon.errors import RPCError
+from telethon.extensions import html as _telethon_html
 from telethon.extensions import markdownv3 as _mdv3
 from telethon.tl import functions as _functions
 from telethon.tl import types as _types
@@ -43,6 +48,7 @@ MessageFormat = Literal["html", "markdown"]
 
 __all__ = (
     "LegacyMessage",
+    "RichMarkup",
     "RichBlocks",
     "bot_inline_rich_message",
     "edit_rich",
@@ -59,7 +65,26 @@ __all__ = (
     "render_blocks_native_html",
     "render_blocks_fallback_html",
     "blocks_to_plain_text",
+    "coerce_to_rich_markup",
+    "rich_dispatch_active",
 )
+
+
+_RICH_DISPATCH_DEPTH: ContextVar[int] = ContextVar("ultroid_rich_dispatch_depth", default=0)
+
+
+def rich_dispatch_active() -> bool:
+    """Whether a shared rich-engine fallback is calling the raw Telethon API."""
+    return _RICH_DISPATCH_DEPTH.get() > 0
+
+
+@contextmanager
+def _legacy_dispatch():
+    token = _RICH_DISPATCH_DEPTH.set(_RICH_DISPATCH_DEPTH.get() + 1)
+    try:
+        yield
+    finally:
+        _RICH_DISPATCH_DEPTH.reset(token)
 
 
 @dataclass(frozen=True)
@@ -70,6 +95,191 @@ class LegacyMessage:
     entities: list
     markup: str
     format: MessageFormat
+
+
+@dataclass(frozen=True, slots=True)
+class RichMarkup:
+    """Already-formatted Telegram Rich Message content.
+
+    Unlike :class:`RichBlocks`, this preserves a model's HTML or Markdown
+    structure. HTML is sanitized at the native rendering boundary and its
+    fallback converts tables to a readable text grid.
+    """
+
+    text: str
+    format: MessageFormat = "html"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str):
+            raise TypeError("RichMarkup.text must be str")
+        object.__setattr__(self, "format", _validate_format(self.format))
+
+
+_HTML_INPUT_RE = re.compile(
+    r"(?is)</?\s*(?:b|strong|i|em|u|s|del|ins|a|code|pre|blockquote|"
+    r"span|tg-spoiler|tg-emoji|br|hr|p|div|h[1-6]|ul|ol|li|table|"
+    r"thead|tbody|tfoot|tr|th|td)\b[^>]*>"
+)
+
+
+def coerce_to_rich_markup(
+    value: Any,
+    *,
+    parse_mode: Any = None,
+    formatting_entities: Any = None,
+) -> RichMarkup | None:
+    """Convert ordinary Telethon text input to safe, canonical HTML markup.
+
+    Returns ``None`` for non-string inputs or unsupported/malformed parser
+    contracts so the caller can preserve Telethon's existing code path. An
+    explicit ``parse_mode=None`` means literal plain text; a recognized HTML
+    body is auto-detected only when a parse mode (normally the project's
+    MarkdownV2 default) would otherwise misread it.
+    """
+    if isinstance(value, RichMarkup):
+        return value
+    if not isinstance(value, str):
+        return None
+
+    if formatting_entities is not None:
+        try:
+            plain, entities = normalize_parsed(
+                (value, formatting_entities), fallback=value
+            )
+            return RichMarkup(_telethon_html.unparse(plain, entities or []), "html")
+        except Exception:
+            return None
+
+    if parse_mode is None:
+        return RichMarkup(_html.escape(value, quote=False), "html")
+
+    mode_name = str(parse_mode).strip().lower() if isinstance(parse_mode, str) else ""
+    if mode_name in {"html", "htm"} or parse_mode is _telethon_html:
+        return RichMarkup(value, "html")
+
+    # fmtmsg() intentionally emits safe HTML, while most legacy clients default
+    # to MarkdownV2. Preserve that HTML instead of passing it to the wrong parser.
+    probe = re.sub(r"```[\s\S]*?```|`[^`]*`", "", value)
+    if _HTML_INPUT_RE.search(probe):
+        return RichMarkup(value, "html")
+
+    if parse_rich is None:
+        return None
+    try:
+        plain, entities = normalize_parsed(parse_rich(value, parse_mode), fallback=value)
+        markup = _telethon_html.unparse(plain, entities or [])
+        return RichMarkup(markup, "html")
+    except Exception:
+        return None
+
+
+_RICH_TAGS = frozenset(
+    {
+        "a", "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+        "span", "tg-spoiler", "tg-emoji", "blockquote", "p", "div", "br",
+        "hr", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li",
+        "pre", "code", "table", "caption", "thead", "tbody", "tfoot",
+        "tr", "th", "td", "sub", "sup",
+    }
+)
+_RICH_VOID_TAGS = frozenset({"br", "hr"})
+_RICH_DROP_CONTENT = frozenset(
+    {"script", "style", "iframe", "object", "svg", "math", "template", "head", "title"}
+)
+
+
+class _RichHTMLSanitizer(HTMLParser):
+    """Allow only Telegram rich-text tags and narrowly validated attributes."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.stack: list[str] = []
+        self.dropped: list[str] = []
+
+    @staticmethod
+    def _safe_href(value: str) -> bool:
+        if value.startswith("#"):
+            return True
+        from urllib.parse import urlsplit
+
+        return urlsplit(value).scheme.lower() in {"http", "https", "tg", "mailto"}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if self.dropped:
+            if tag in _RICH_DROP_CONTENT:
+                self.dropped.append(tag)
+            return
+        if tag in _RICH_DROP_CONTENT:
+            self.dropped.append(tag)
+            return
+        if tag in {"html", "body"} or tag not in _RICH_TAGS:
+            return
+
+        values = {key.lower(): value for key, value in attrs if value is not None}
+        safe_attrs: list[tuple[str, str]] = []
+        if tag == "a" and values.get("href") and self._safe_href(values["href"]):
+            safe_attrs.append(("href", values["href"]))
+        if tag == "blockquote" and "expandable" in values:
+            safe_attrs.append(("expandable", ""))
+        if tag == "code":
+            match = re.fullmatch(r"language-([A-Za-z0-9_+-]{1,32})", values.get("class", ""))
+            if match:
+                safe_attrs.append(("class", f"language-{match.group(1)}"))
+        if tag == "table":
+            classes = [
+                value for value in values.get("class", "").split()
+                if value in {"bordered", "striped", "compact"}
+            ]
+            if classes:
+                safe_attrs.append(("class", " ".join(classes)))
+        if tag == "span" and values.get("class") == "tg-spoiler":
+            safe_attrs.append(("class", "tg-spoiler"))
+        if tag == "tg-emoji" and values.get("emoji-id", "").isdigit():
+            safe_attrs.append(("emoji-id", values["emoji-id"]))
+
+        attr_text = "".join(
+            f' {name}="{_html.escape(value, quote=True)}"'
+            for name, value in safe_attrs
+        )
+        self.parts.append(f"<{tag}{attr_text}>")
+        if tag not in _RICH_VOID_TAGS:
+            self.stack.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if self.dropped:
+            if tag == self.dropped[-1]:
+                self.dropped.pop()
+            return
+        if tag in {"html", "body"} or tag in _RICH_VOID_TAGS or tag not in self.stack:
+            return
+        while self.stack:
+            current = self.stack.pop()
+            self.parts.append(f"</{current}>")
+            if current == tag:
+                break
+
+    def handle_data(self, data: str) -> None:
+        if not self.dropped:
+            clean = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", data)
+            self.parts.append(_html.escape(clean, quote=False))
+
+    def finish(self) -> str:
+        self.close()
+        while self.stack:
+            self.parts.append(f"</{self.stack.pop()}>")
+        return "".join(self.parts)
+
+
+def sanitize_rich_html(text: str) -> str:
+    """Escape text and retain only safe Telegram rich HTML elements."""
+    if not isinstance(text, str):
+        raise TypeError("rich HTML must be str")
+    parser = _RichHTMLSanitizer()
+    parser.feed(text)
+    return parser.finish()
 
 
 class RichBlocks:
@@ -244,6 +454,8 @@ def normalize_blocks(blocks: Any) -> list[dict]:
     needed for ``{"type": "header"|"paragraph"|"code", "text": ...}`` or
     ``{"type": "list", "items": [...], "ordered": bool}`` shapes.
     """
+    if isinstance(blocks, RichMarkup):
+        return [{"type": "paragraph", "text": blocks.text}]
     if isinstance(blocks, RichBlocks):
         return blocks.to_list()
     if isinstance(blocks, str):
@@ -269,6 +481,8 @@ def _optional_bool(name: str, value: bool | None) -> bool | None:
 def _normalize_blocks(blocks: Any) -> list[dict]:
     if isinstance(blocks, RichBlocks):
         return blocks.to_list()
+    if isinstance(blocks, RichMarkup):
+        return [{"type": "paragraph", "text": blocks.text}]
     if isinstance(blocks, str):
         return [{"type": "paragraph", "text": blocks}]
     return [dict(block) for block in (blocks or [])]
@@ -281,7 +495,11 @@ def _policy(
     is_premium: bool | None,
     is_bot: bool | None,
 ) -> tuple[Engine, MessageFormat, bool | None, bool | None]:
-    if isinstance(blocks, RichBlocks):
+    if isinstance(blocks, RichMarkup):
+        if format is not None and _validate_format(format) != blocks.format:
+            raise ValueError("format must match the RichMarkup format")
+        format = blocks.format if format is None else format
+    elif isinstance(blocks, RichBlocks):
         engine = blocks.engine if engine is None else engine
         format = blocks.format if format is None else format
         is_premium = blocks.is_premium if is_premium is None else is_premium
@@ -310,7 +528,7 @@ def table_to_text(rows: Sequence[Sequence[Any]], caption: str | None = None) -> 
     re-implementing the alignment."""
     str_rows = [[str(cell) for cell in row] for row in (rows or [])]
     if not str_rows:
-        return ""
+        return str(caption or "")
     width = max((len(row) for row in str_rows), default=0)
     col_widths = [
         max((len(row[i]) if i < len(row) else 0) for row in str_rows)
@@ -334,6 +552,88 @@ def _table_to_text(block: dict) -> str:
     """Render a table block as a plain monospace text grid (fallback +
     native-embed-as-preformatted-text use this identically)."""
     return table_to_text(block.get("rows") or [], caption=block.get("caption"))
+
+
+class _TableRowsParser(HTMLParser):
+    """Extract cell text from one sanitized rich-HTML table."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[str]] = []
+        self.row: list[str] | None = None
+        self.cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "tr":
+            self.row = []
+        elif tag.lower() in {"td", "th"}:
+            self.cell = []
+        elif tag.lower() == "br" and self.cell is not None:
+            self.cell.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in {"td", "th"} and self.cell is not None:
+            if self.row is not None:
+                self.row.append(" ".join("".join(self.cell).split()))
+            self.cell = None
+        elif tag == "tr" and self.row is not None:
+            if self.row:
+                self.rows.append(self.row)
+            self.row = None
+
+    def handle_data(self, data: str) -> None:
+        if self.cell is not None:
+            self.cell.append(data)
+
+
+_RICH_TABLE_RE = re.compile(r"<table\b[^>]*>.*?</table\s*>", re.IGNORECASE | re.DOTALL)
+_MD_TABLE_SEPARATOR_RE = re.compile(
+    r"^\s*\|?\s*:?-{1,}:?\s*(?:\|\s*:?-{1,}:?\s*)+\|?\s*$"
+)
+
+
+def _rich_html_fallback(text: str) -> str:
+    """Sanitize HTML and replace unsupported native tables with text grids."""
+    safe = sanitize_rich_html(text)
+
+    def replace_table(match: re.Match[str]) -> str:
+        parser = _TableRowsParser()
+        parser.feed(match.group(0))
+        parser.close()
+        grid = table_to_text(parser.rows)
+        return f"<pre><code>{_html.escape(grid)}</code></pre>" if grid else ""
+
+    return _RICH_TABLE_RE.sub(replace_table, safe)
+
+
+def _split_markdown_row(line: str) -> list[str]:
+    line = line.strip().strip("|")
+    return [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", line)]
+
+
+def _markdown_table_fallback(markdown: str) -> str:
+    """Fence GitHub-style Markdown tables for an aligned legacy rendering."""
+    lines = markdown.splitlines()
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        if (
+            index + 1 < len(lines)
+            and "|" in lines[index]
+            and _MD_TABLE_SEPARATOR_RE.match(lines[index + 1])
+        ):
+            rows = [_split_markdown_row(lines[index])]
+            index += 2  # skip the header and Markdown separator
+            while index < len(lines) and "|" in lines[index]:
+                rows.append(_split_markdown_row(lines[index]))
+                index += 1
+            grid = table_to_text(rows)
+            out.extend(["```", grid, "```"] if grid else [])
+            continue
+        out.append(lines[index])
+        index += 1
+    return "\n".join(out)
 
 
 def _render_table_html(block: dict) -> str:
@@ -599,7 +899,7 @@ def _fallback_markdown(blocks: list[dict]) -> str:
 
 
 def legacy_message(
-    blocks: Any, format: MessageFormat = "html"
+    blocks: Any, format: MessageFormat | None = None
 ) -> LegacyMessage:
     """Render *blocks* with the always-safe legacy engine.
 
@@ -609,12 +909,22 @@ def legacy_message(
     into real message entities. Never touches the rich TL schema, so it
     works on every build and every account.
     """
-    format = _validate_format(format)
-    markup = (
-        render_blocks_fallback_html(_normalize_blocks(blocks))
-        if format == "html"
-        else _fallback_markdown(_normalize_blocks(blocks))
-    )
+    if isinstance(blocks, RichMarkup):
+        format = blocks.format if format is None else _validate_format(format)
+        if format != blocks.format:
+            raise ValueError("format must match the RichMarkup format")
+        markup = (
+            _rich_html_fallback(blocks.text)
+            if format == "html"
+            else _markdown_table_fallback(blocks.text)
+        )
+    else:
+        format = _validate_format(format or "html")
+        markup = (
+            render_blocks_fallback_html(_normalize_blocks(blocks))
+            if format == "html"
+            else _fallback_markdown(_normalize_blocks(blocks))
+        )
     if not markup:
         return LegacyMessage("", [], "", format)
     text, entities = normalize_parsed(_mdv3.parse(markup, mode=format), fallback=markup)
@@ -625,7 +935,12 @@ def rich_message_markdown(
     blocks: Any, *, rtl: bool = False, noautolink: bool | None = None
 ):
     """Build a native ``InputRichMessageMarkdown``."""
-    markup, files = _native_markdown(_normalize_blocks(blocks))
+    if isinstance(blocks, RichMarkup):
+        if blocks.format != "markdown":
+            raise ValueError("RichMarkup must use Markdown for a Markdown payload")
+        markup, files = blocks.text, []
+    else:
+        markup, files = _native_markdown(_normalize_blocks(blocks))
     return _types.InputRichMessageMarkdown(
         markdown=markup,
         rtl=bool(rtl) or None,
@@ -687,22 +1002,47 @@ def bot_inline_rich_message(
     )
 
 
-def _fallback_text_entities(block_list: list[dict]) -> tuple[str, list]:
+def _fallback_text_entities(
+    block_list: Any, format: MessageFormat = "html"
+) -> tuple[str, list]:
     """Render *block_list* to ``(text, entities)`` the guaranteed way.
 
     Falls back to an untagged plain-text join (no entities) if
     ``custom.rich`` itself failed to import  -  belt-and-suspenders so this
     module never raises merely because of the fallback path.
     """
-    if parse_rich is None:
-        return blocks_to_plain_text(block_list), []
-    html_str = render_blocks_fallback_html(block_list)
-    if not html_str:
+    format = _validate_format(block_list.format if isinstance(block_list, RichMarkup) else format)
+    if isinstance(block_list, RichMarkup):
+        markup = (
+            _rich_html_fallback(block_list.text)
+            if format == "html"
+            else _markdown_table_fallback(block_list.text)
+        )
+    else:
+        normalized = normalize_blocks(block_list)
+        markup = (
+            render_blocks_fallback_html(normalized)
+            if format == "html"
+            else _fallback_markdown(normalized)
+        )
+    if not markup:
         return "", []
+    if parse_rich is None:
+        if isinstance(block_list, RichMarkup):
+            try:
+                return normalize_parsed(_mdv3.parse(markup, mode=format), fallback=markup)
+            except Exception:  # pragma: no cover - defensive
+                return markup, []
+        return blocks_to_plain_text(normalized), []
     try:
-        return parse_rich(html_str, mode="html")
+        return parse_rich(markup, mode=format)
     except Exception:  # pragma: no cover - defensive
-        return blocks_to_plain_text(block_list), []
+        if isinstance(block_list, RichMarkup):
+            try:
+                return normalize_parsed(_mdv3.parse(markup, mode=format), fallback=markup)
+            except Exception:
+                return markup, []
+        return blocks_to_plain_text(normalized), []
 
 
 def blocks_to_plain_text(block_list: list[dict]) -> str:
@@ -748,7 +1088,12 @@ def rich_message_html(
     block dicts. The pinned Telethon-v2 fork always has the rich schema
     (layer 228), so the type is used directly - no capability guards.
     """
-    html_str, file_specs = render_blocks_native_html(normalize_blocks(blocks))
+    if isinstance(blocks, RichMarkup):
+        if blocks.format != "html":
+            raise ValueError("RichMarkup must use HTML for an HTML payload")
+        html_str, file_specs = sanitize_rich_html(blocks.text), []
+    else:
+        html_str, file_specs = render_blocks_native_html(normalize_blocks(blocks))
     files = None
     if file_specs:
         built = []
@@ -835,8 +1180,7 @@ async def send_rich(
     text/entities  -  the public API is identical either way.
     """
     block_list = normalize_blocks(blocks)
-    text, entities = _fallback_text_entities(block_list)
-    text = text or " "
+    render_input = blocks if isinstance(blocks, RichMarkup) else block_list
     # legacy still interfering
     builder_policy = isinstance(blocks, RichBlocks) and any(
         value is not None for value in (blocks.is_bot, blocks.is_premium)
@@ -860,21 +1204,24 @@ async def send_rich(
     selected, format, _, _ = _policy(
         blocks, engine, format, resolved_premium, resolved_bot
     )
+    text, entities = _fallback_text_entities(render_input, format=format)
+    text = text or " "
     if selected == "legacy":
-        return await client.send_message(
-            peer,
-            text,
-            formatting_entities=entities or None,
-            parse_mode=None,
-            reply_to=reply_to,
-            buttons=buttons,
-            silent=silent,
-            background=background,
-            link_preview=link_preview,
-        )
+        with _legacy_dispatch():
+            return await client.send_message(
+                peer,
+                text,
+                formatting_entities=entities or None,
+                parse_mode=None,
+                reply_to=reply_to,
+                buttons=buttons,
+                silent=silent,
+                background=background,
+                link_preview=link_preview,
+            )
     # native
     native = rich_message(
-        block_list,
+        render_input,
         engine="rich",
         format=format,
         is_premium=resolved_premium,
@@ -897,17 +1244,18 @@ async def send_rich(
     try:
         result = await client(request)
     except RPCError:
-        return await client.send_message(
-            peer,
-            text,
-            formatting_entities=entities or None,
-            parse_mode=None,
-            reply_to=reply_to,
-            buttons=buttons,
-            silent=silent,
-            background=background,
-            link_preview=link_preview,
-        )
+        with _legacy_dispatch():
+            return await client.send_message(
+                peer,
+                text,
+                formatting_entities=entities or None,
+                parse_mode=None,
+                reply_to=reply_to,
+                buttons=buttons,
+                silent=silent,
+                background=background,
+                link_preview=link_preview,
+            )
     getter = getattr(client, "_get_response_message", None)
     if getter is not None:
         try:
@@ -935,13 +1283,15 @@ async def edit_rich(
     """Edit message *msg_id* in *peer* to render *blocks* as a Rich Message.
 
     Same native-then-plain-text-fallback contract as :func:`send_rich`, via
-    a raw ``messages.EditMessageRequest(..., rich_message=...)``.
+    a raw ``messages.EditMessageRequest`` or
+    ``messages.EditInlineBotMessageRequest`` with ``rich_message=...``.
     """
     block_list = normalize_blocks(blocks)
-    text, entities = _fallback_text_entities(block_list)
-    text = text or " "
-    mid = _get_message_id(msg_id)
-    if mid is None:
+    render_input = blocks if isinstance(blocks, RichMarkup) else block_list
+    inline_types = (_types.InputBotInlineMessageID, _types.InputBotInlineMessageID64)
+    inline_id = peer if isinstance(peer, inline_types) else None
+    mid = None if inline_id is not None else _get_message_id(msg_id)
+    if inline_id is None and mid is None:
         raise ValueError(f"edit_rich: could not resolve a message id from {msg_id!r}")
     resolved_bot = _client_me_flag(client, "bot") if is_bot is None else is_bot
     resolved_premium = (
@@ -950,22 +1300,32 @@ async def edit_rich(
     selected, format, _, _ = _policy(
         blocks, engine, format, resolved_premium, resolved_bot
     )
-    block_list = _normalize_blocks(blocks)
-    fallback = legacy_message(block_list, format=format)
+    fallback = legacy_message(render_input, format=format)
     text = fallback.text or " "
+    entities = fallback.entities
     if selected == "legacy":
-        return await client.edit_message(
-            peer,
-            mid,
-            text,
-            formatting_entities=entities or None,
-            parse_mode=None,
-            buttons=buttons,
-            link_preview=link_preview,
-        )
+        with _legacy_dispatch():
+            if inline_id is not None:
+                return await client.edit_message(
+                    inline_id,
+                    text,
+                    formatting_entities=entities or None,
+                    parse_mode=None,
+                    buttons=buttons,
+                    link_preview=link_preview,
+                )
+            return await client.edit_message(
+                peer,
+                mid,
+                text,
+                formatting_entities=entities or None,
+                parse_mode=None,
+                buttons=buttons,
+                link_preview=link_preview,
+            )
 
     native = rich_message(
-        block_list,
+        render_input,
         engine="rich",
         format=format,
         is_premium=resolved_premium,
@@ -973,28 +1333,75 @@ async def edit_rich(
         rtl=rtl,
         noautolink=noautolink,
     )
-    input_peer = await client.get_input_entity(peer)
-    request = _functions.messages.EditMessageRequest(
-        peer=input_peer,
-        id=mid,
-        message=text,
-        entities=entities or None,
-        no_webpage=not link_preview,
-        reply_markup=client.build_reply_markup(buttons),
-        rich_message=native,
-    )
-    try:
-        result = await client(request)
-    except RPCError:
-        return await client.edit_message(
-            peer,
-            mid,
-            text,
-            formatting_entities=entities or None,
-            parse_mode=None,
-            buttons=buttons,
-            link_preview=link_preview,
+    if inline_id is not None:
+        request = _functions.messages.EditInlineBotMessageRequest(
+            id=inline_id,
+            message=text,
+            entities=entities or None,
+            no_webpage=not link_preview,
+            reply_markup=client.build_reply_markup(buttons),
+            rich_message=native,
         )
+        route = getattr(client, "route", None)
+        request_client = route() if callable(route) else client
+        session = getattr(request_client, "session", None)
+        if session is not None and session.dc_id != inline_id.dc_id:
+            sender = await request_client._borrow_exported_sender(inline_id.dc_id)
+            try:
+                call = request_client._call(sender, request)
+                use_exported = True
+            except Exception:
+                await request_client._return_exported_sender(sender)
+                raise
+        else:
+            sender = None
+            call = request_client(request)
+            use_exported = False
+    else:
+        input_peer = await client.get_input_entity(peer)
+        request = _functions.messages.EditMessageRequest(
+            peer=input_peer,
+            id=mid,
+            message=text,
+            entities=entities or None,
+            no_webpage=not link_preview,
+            reply_markup=client.build_reply_markup(buttons),
+            rich_message=native,
+        )
+        sender = None
+        call = client(request)
+        use_exported = False
+    try:
+        result = await call
+    except RPCError:
+        if inline_id is not None:
+            if use_exported:
+                await request_client._return_exported_sender(sender)
+                use_exported = False
+            with _legacy_dispatch():
+                return await client.edit_message(
+                    inline_id,
+                    text,
+                    formatting_entities=entities or None,
+                    parse_mode=None,
+                    buttons=buttons,
+                    link_preview=link_preview,
+                )
+        with _legacy_dispatch():
+            return await client.edit_message(
+                peer,
+                mid,
+                text,
+                formatting_entities=entities or None,
+                parse_mode=None,
+                buttons=buttons,
+                link_preview=link_preview,
+            )
+    finally:
+        if use_exported:
+            await request_client._return_exported_sender(sender)
+    if inline_id is not None:
+        return result
     getter = getattr(client, "_get_response_message", None)
     if getter is not None:
         try:

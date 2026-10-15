@@ -5,168 +5,124 @@
 # PLease read the GNU Affero General Public License in
 # <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
 
+import html
+import re
+
 from telethon.errors.rpcerrorlist import (
     BotInlineDisabledError,
     BotMethodInvalidError,
     BotResponseTimeoutError,
 )
+
 from custom.tg import ikm
-from telethon.tl.custom import Button
-
 from pyUltroid._core._cbs import cb
+from pyUltroid._core.richmsg import (
+    RichBlocks,
+    RichMarkup,
+    coerce_to_rich_markup,
+    edit_rich,
+    normalize_blocks,
+    render_blocks_native_html,
+)
 from pyUltroid.dB._core import HELP, LIST
-from pyUltroid._core.richmsg import RichBlocks
-from pyUltroid.fns import fns
-
-from . import HNDLR, LOGS, OWNER_NAME, asst, get_string, ultroid_cmd
-
-from telethon.tl.types import (
-    ReplyInlineMarkup,
-    KeyboardButtonRow,
+from pyUltroid.fns.command_help import (
+    command_aliases,
+    command_matches,
+    command_patterns,
+    command_syntax,
 )
 
-# ── MarkdownV3 + small-caps UI helpers for the .help menu ──────────────
-#
-# The .help menu body and button labels render under the fork's MarkdownV3
-# (``custom.rich.RICH_MD`` / the ``.available``-guarded
-# ``pyUltroid._core.entities.RICH_MD`` wrapper around it) when available,
-# falling back to the classic ``inline_*`` strings under the client's default
-# parse mode. ``parse_mode`` is *never* passed as ``None`` — the classic
-# branch omits it (see :func:`_parse_mode_kwargs`) so the default applies
-# instead of parsing being disabled. Button labels are folded to the
-# small-caps font this UI uses throughout.
-
-#: lower-case letter -> its Unicode small-cap glyph. ``f``/``q``/``x`` have
-#: no small-cap code point and are deliberately absent (left untouched),
-#: matching the mixed small-caps style the existing assistant captions use.
-_SMALL_CAPS = {
-    "a": "ᴀ",
-    "b": "ʙ",
-    "c": "ᴄ",
-    "d": "ᴅ",
-    "e": "ᴇ",
-    "g": "ɢ",
-    "h": "ʜ",
-    "i": "ɪ",
-    "j": "ᴊ",
-    "k": "ᴋ",
-    "l": "ʟ",
-    "m": "ᴍ",
-    "n": "ɴ",
-    "o": "ᴏ",
-    "p": "ᴘ",
-    "r": "ʀ",
-    "s": "ꜱ",
-    "t": "ᴛ",
-    "u": "ᴜ",
-    "v": "ᴠ",
-    "w": "ᴡ",
-    "y": "ʏ",
-    "z": "ᴢ",
-}
+from . import HNDLR, LOGS, InlinePlugin, asst, get_string, udB, ultroid_cmd
 
 
-def _to_smallcaps(text):
-    """Render *text* in the small-caps font used across this UI.
-
-    Lower-case letters with a small-cap glyph are swapped for it; upper-case
-    letters, digits, punctuation and the few lower-case letters with no
-    small-cap glyph (``f``/``q``/``x``) are left untouched.
-    """
-    return "".join(_SMALL_CAPS.get(ch, ch) for ch in str(text))
-
-
-#: MarkdownV3 entity-delimiter chars that must be backslash-escaped when they
-#: appear in *dynamic* values (owner name, counts) substituted into a template
-#: that already carries intentional ``**bold**`` / ``[text](url)`` / `` `code` ``
-#: markup — so user input can never open a stray entity.
-_MDv3_ESCAPE_CHARS = "_*[]()~`>-|"
-
-
-def _mdv3_escape(text):
-    """Backslash-escape MarkdownV3 entity delimiters in *text*."""
-    return "".join("\\" + ch if ch in _MDv3_ESCAPE_CHARS else ch for ch in str(text))
-
-
-def _mdv3_text(template, *args):
-    """``(text, parse_mode)`` for a help body built from *template*.
-
-    MarkdownV3 (``RICH_MD``) when available: the template's plain ``~``
-    separators are escaped (they are separators here, not strikethrough) and
-    the dynamic *args* are delimiter-escaped, then everything is formatted and
-    parsed as MarkdownV3. Classic fallback: the template is formatted as-is and
-    returned with ``parse_mode=None`` — meaning the caller *omits*
-    ``parse_mode`` (see :func:`_parse_mode_kwargs`) so the client's default
-    parse mode applies; parsing is never disabled with an explicit ``None``.
-    """
+def _plugin_handler_count(name):
+    """Count registered commands and plugin-control handlers."""
+    count = len(command_patterns(name, LIST))
     try:
-        from pyUltroid._core.entities import RICH_MD
+        from pyUltroid.ultroid import core
 
-        rich = bool(getattr(RICH_MD, "available", False))
-    except Exception:
-        RICH_MD = None
-        rich = False
-    if rich:
-        return (
-            template.replace("~", "\\~").format(*(_mdv3_escape(a) for a in args)),
-            RICH_MD,
-        )
-    return template.format(*args), None
+        count += len(core.manifest.get_entries(name))
+    except (ImportError, AttributeError, KeyError, TypeError, ValueError):
+        pass
+    return count
+
+
+def _help_overview_rows():
+    """Build live handler totals for each main Help section."""
+    rows = []
+    for key, label, contains in (
+        ("Official", "Plugins", "Core plugin commands and controls"),
+        ("Addons", "Add-ons", "Optional plugin commands and controls"),
+        ("VCBot", "Voice Chat", "Voice chat commands and controls"),
+    ):
+        plugins = HELP.get(key) or {}
+        names = plugins.keys() if hasattr(plugins, "keys") else ()
+        total = sum(_plugin_handler_count(name) for name in names)
+        rows.append([label, str(total), contains])
+    rows.append(["Inline Plugins", str(len(InlinePlugin)), "Searchable inline tools"])
+    return rows
+
+
+def _page_footer(page, pages, total):
+    """Format the consistent, lower-case Help pagination footer."""
+    return f"page {int(page)} of {int(pages)} • total {int(total)}"
+
+
+_MARKDOWN_CODE_SPANS = re.compile(r"(`+)(.*?)\1", re.DOTALL)
+
+
+def _markdown_docs_markup(text):
+    """Convert help Markdown while preserving angle-bracket code placeholders."""
+    source = str(text or "")
+
+    def escape_code_angles(match):
+        delimiter, code = match.groups()
+        code = re.sub(r"(?<!\\)([<>])", r"\\\1", code)
+        return f"{delimiter}{code}{delimiter}"
+
+    source = _MARKDOWN_CODE_SPANS.sub(escape_code_angles, source)
+    return coerce_to_rich_markup(source, parse_mode="mdv3")
 
 
 def _help_blocks():
-    """Build the main help card for a failed inline-help request."""
-    blocks = (
-        RichBlocks(is_bot=True)
-        .header("Bot Help", level=2)
-        .paragraph(
-            f"Welcome, {OWNER_NAME}. Choose a section to browse commands and tools."
-        )
+    """Build the overview-first Help Menu as native RichMessage HTML."""
+    intro = RichBlocks(engine="rich", format="html", is_bot=True)
+    intro.header("Help Menu", level=2)
+    intro.paragraph("Browse plugin commands, inline tools, and account settings from here.")
+    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview.header("Overview", level=2)
+    rows = _help_overview_rows()
+    overview.table(
+        [["Section name", "Total handlers", "Contains"], *rows],
+        caption="Help sections",
+        is_bordered=True,
+        is_striped=True,
     )
-    blocks.table(
-        [
-            ["Section", "Contents"],
-            ["Plugins", "Core commands"],
-            ["Add-ons", "Optional modules"],
-            ["Voice Chat", "Voice and video chat tools"],
-            ["Inline Plugins", "Searchable inline tools"],
-        ],
-        caption="Help menu",
-        is_compact=True,
-    )
-    blocks.paragraph(
-        "For plugin commands, use .help <plugin>; use .cmds for the complete command list."
-    )
-    return blocks
-
-
-def _help_body(total_cmds):
-    """``(text, parse_mode)`` for the main ``.help`` menu body (``inline_4``)."""
-    return _mdv3_text(
-        get_string("inline_4"),
-        OWNER_NAME,
-        len(HELP.get("Official", [])),
-        len(HELP.get("Addons", [])),
-        total_cmds,
+    intro_html, _files = render_blocks_native_html(normalize_blocks(intro))
+    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
+    total_handlers = sum(int(row[1]) for row in rows)
+    return RichMarkup(
+        f"{intro_html}<hr>{overview_html}<hr>"
+        f"<p><i>{_page_footer(1, 1, total_handlers)}</i></p>",
+        "html",
     )
 
 
-def _help_body_html(total_cmds):
-    """Return the main ``.help`` menu body as an HTML string for ``InputRichMessageHTML``."""
-    try:
-        owner = _mdv3_escape(str(OWNER_NAME))
-    except Exception:
-        owner = str(OWNER_NAME)
-    n_official = len(HELP.get("Official", []))
-    n_addons = len(HELP.get("Addons", []))
-    n_cmds = total_cmds
-    return (
-        f"<blockquote expandable><b>Bᴏᴛ Oғ {owner}</b></blockquote>\n\n"
-        f"<b>Mᴀɪɴ Mᴇɴᴜ</b>\n\n"
-        f"<b>Pʟᴜɢɪɴs</b> ~ {n_official}\n"
-        f"<b>Aᴅᴅᴏɴs</b> ~ {n_addons}\n"
-        f"<b>Tᴏᴛᴀʟ Cᴏᴍᴍᴀɴᴅs</b> ~ {n_cmds}"
-    )
+def _help_body(total_cmds=None):
+    """Return Help Menu markup for callback edits."""
+    return _help_blocks().text, "html"
+
+
+def _help_body_html(total_cmds=None):
+    """Return native RichMessage HTML for the complete Help Menu."""
+    return _help_blocks().text
+
+
+_MD_ESCAPE = "_*[]()~`>-|"
+
+
+def _md_escape(value):
+    return "".join("\\" + char if char in _MD_ESCAPE else char for char in str(value))
 
 
 def _parse_mode_kwargs(parse_mode):
@@ -181,160 +137,125 @@ def _parse_mode_kwargs(parse_mode):
 
 
 def _build_help_keyboard():
-    """Build a ``ReplyInlineMarkup`` for the main ``.help`` menu.
+    """Return the clean, semantically colored help-button rows."""
+    return main_help_menu_buttons()
 
-    Uses the same layout as ``_main_help_menu`` but constructs
-    ``KeyboardButtonRow`` / ``KeyboardInlineButton`` / styled
-    ``KeyboardInlineButton`` objects for the rich-message path.
+
+def _assistant_settings_url():
+    username = getattr(getattr(asst, "me", None), "username", None)
+    if username:
+        return f"https://t.me/{username}?start=set"
+    return "https://t.me/UltroidSupportChat"
+
+
+def _loaded_category_style(category):
+    """Color loaded plugin libraries green and unavailable ones red."""
+    return "success" if HELP.get(category) else "danger"
+
+
+def _fallback_help_buttons():
+    """Return only buttons that work on a user-client fallback message.
+
+    Callback data in the rich menu is handled by the assistant bot. If inline
+    mode is unavailable and this command sends through the user client, those
+    callbacks have no receiver; a private-chat URL remains functional.
     """
-    rows = [
-        KeyboardButtonRow(
-            buttons=[
-                Button.inline(
-                    _to_smallcaps(get_string("help_4")),
-                    data=cb("assistant", "inline", "help_menu", "Official", "0"),
-                    style="success",
-                ),
-                Button.inline(
-                    _to_smallcaps(get_string("help_5")),
-                    data=cb("assistant", "inline", "help_menu", "Addons", "0"),
-                    style="primary",
-                ),
+    username = getattr(getattr(asst, "me", None), "username", None)
+    if not username:
+        return None
+    return ikm(
+        [
+            [
+                (
+                    "Open assistant",
+                    "url",
+                    f"https://t.me/{username}?start=start",
+                    "primary",
+                )
             ]
-        ),
-        KeyboardButtonRow(
-            buttons=[
-                Button.inline(
-                    _to_smallcaps(get_string("help_6")),
-                    data=cb("assistant", "inline", "help_menu", "VCBot", "0"),
-                    style="success",
-                ),
-                Button.inline(
-                    _to_smallcaps(get_string("help_7")),
-                    data="inlone",
-                    style="success",
-                ),
-            ]
-        ),
-        KeyboardButtonRow(
-            buttons=[
-                Button.inline(
-                    _to_smallcaps(get_string("help_8")),
-                    data="ownr",
-                    style="primary",
-                ),
-                Button.url(
-                    _to_smallcaps(get_string("help_9")),
-                    url=f"https://t.me/{asst.me.username}?start=set",
-                    style="primary",
-                ),
-            ]
-        ),
-        KeyboardButtonRow(
-            buttons=[
-                Button.inline(
-                    _to_smallcaps(get_string("help_10")),
-                    data="close",
-                    style="danger",
-                ),
-            ]
-        ),
-    ]
-    return ReplyInlineMarkup(rows=rows)
+        ],
+        icon=False,
+    )
 
 
 _main_help_menu = ikm(
     [
         [
             (
-                _to_smallcaps(get_string("help_4")),
+                get_string("help_4"),
                 cb("assistant", "inline", "help_menu", "Official", "0"),
+                _loaded_category_style("Official"),
             ),
             (
-                _to_smallcaps(get_string("help_5")),
+                get_string("help_5"),
                 cb("assistant", "inline", "help_menu", "Addons", "0"),
+                _loaded_category_style("Addons"),
             ),
         ],
         [
             (
-                _to_smallcaps(get_string("help_6")),
+                get_string("help_6"),
                 cb("assistant", "inline", "help_menu", "VCBot", "0"),
             ),
-            (_to_smallcaps(get_string("help_7")), "inlone"),
+            (get_string("help_7"), "inlone"),
         ],
         [
-            (_to_smallcaps(get_string("help_8")), "ownr"),
+            (get_string("help_8"), "ownr"),
             (
-                _to_smallcaps(get_string("help_9")),
+                get_string("help_9"),
                 "url",
-                f"https://t.me/{asst.me.username}?start=set",
+                _assistant_settings_url(),
+                "primary",
             ),
         ],
-        [(_to_smallcaps(get_string("help_10")), "close")],
-    ]
+        [(get_string("help_10"), "close", "danger")],
+    ],
+    icon=False,
 )
 
 
 def _styled_main_help_menu():
-    """Rebuild ``_main_help_menu`` through the styled button kit.
-
-    Same rows, labels, callback-data and URL as ``_main_help_menu`` — only
-    the rendering (``preset``-based bg colouring + the small-caps
-    small-caps labels) differs. Built fresh on every call so it never
-    shares (or mutates) the classic list's underlying row objects. Raises on
-    import failure so the caller (``main_help_menu_buttons``) can fall back
-    to the classic menu.
-
-    Colour scheme (styled path only — the classic path has no colours):
-      * Official / VCBot / Inline-Plugins category buttons -> GREEN (``success``)
-      * Add-ons category button                      -> BLUE  (``primary``)
-      * Owner Tools / Settings (URL)                 -> BLUE  (``primary``)
-      * the main-menu close/back button              -> RED   (``danger``)
-    """
+    """Rebuild the same menu through the styled button kit."""
     from pyUltroid._core.buttonkit import button as _sbtn
 
     return [
         [
             _sbtn(
-                _to_smallcaps(get_string("help_4")),
+                get_string("help_4"),
                 data=cb("assistant", "inline", "help_menu", "Official", "0"),
-                preset="success",
+                preset=_loaded_category_style("Official"),
             ),
             _sbtn(
-                _to_smallcaps(get_string("help_5")),
+                get_string("help_5"),
                 data=cb("assistant", "inline", "help_menu", "Addons", "0"),
-                preset="primary",
+                preset=_loaded_category_style("Addons"),
             ),
         ],
         [
             _sbtn(
-                _to_smallcaps(get_string("help_6")),
+                get_string("help_6"),
                 data=cb("assistant", "inline", "help_menu", "VCBot", "0"),
-                preset="success",
             ),
-            _sbtn(_to_smallcaps(get_string("help_7")), data="inlone", preset="success"),
+            _sbtn(get_string("help_7"), data="inlone"),
         ],
         [
-            _sbtn(_to_smallcaps(get_string("help_8")), data="ownr", preset="primary"),
+            _sbtn(get_string("help_8"), data="ownr"),
             _sbtn(
-                _to_smallcaps(get_string("help_9")),
-                url=f"https://t.me/{asst.me.username}?start=set",
+                get_string("help_9"),
+                url=_assistant_settings_url(),
                 preset="primary",
             ),
         ],
-        [_sbtn(_to_smallcaps(get_string("help_10")), data="close", preset="danger")],
+        [_sbtn(get_string("help_10"), data="close", preset="danger")],
     ]
 
 
 def main_help_menu_buttons():
     """Return the main help menu keyboard for the current ``.ui buttons`` style.
 
-    Defaults (``UI_BUTTONS=classic``) return ``_main_help_menu`` itself —
-    the exact same list object, preserving the in-place row-2 mutation the
-    ``_help`` command applies for MANAGER/DUAL_HNDLR setups (see below).
-    ``styled`` mode returns a freshly-built styled keyboard, falling back to
-    the classic list on any error (missing buttonkit, bad preset, etc.) so
-    this never breaks the help menu.
+    Both button modes return fresh rows. The manager callback is included only
+    on assistant-owned inline help messages; user-client fallback messages use
+    a private-chat URL instead.
     """
     try:
         from ._rebrand import ui_buttons_style
@@ -344,81 +265,245 @@ def main_help_menu_buttons():
         styled = False
     if styled:
         try:
-            return _styled_main_help_menu()
+            buttons = _styled_main_help_menu()
         except Exception:
-            return _main_help_menu
-    return _main_help_menu
+            buttons = [list(row) for row in _main_help_menu]
+    else:
+        buttons = [list(row) for row in _main_help_menu]
+    if udB.get_key("MANAGER") and udB.get_key("DUAL_HNDLR") == "/":
+        manager_row = ikm(
+            [[("Manager Help", cb("help", "manager", "mngbtn"), "primary")]],
+            icon=False,
+        )
+        buttons[2:2] = manager_row
+    return buttons
+
+
+async def _edit_help(event, text):
+    if isinstance(text, RichMarkup):
+        markup = text
+    else:
+        markup = coerce_to_rich_markup(str(text), parse_mode="mdv3")
+        if markup is None:
+            markup = RichMarkup(html.escape(str(text)), "html")
+    return await edit_rich(
+        event.client,
+        event.chat_id,
+        event,
+        markup,
+        engine="rich",
+        format="html",
+        link_preview=False,
+    )
+
+
+def _plugin_title(name):
+    return str(name).replace("_", " ").strip().title() or str(name)
+
+
+def _pmf_guide_text(entries):
+    """Describe the live PMF controls and what each one does."""
+    lines = [
+        "Plugin Manifest Framework (PMF) controls appear as buttons below.",
+        "Toggles switch and persist a setting; actions run once; custom buttons run plugin-defined handlers.",
+    ]
+    for entry in entries or ():
+        kind = entry.get("type")
+        label = entry.get("label") or entry.get("key") or "Control"
+        if kind == "toggle":
+            state = "On" if entry.get("state") else "Off"
+            detail = f"toggle, currently {state}"
+        elif kind == "action":
+            detail = "one-shot action"
+        elif kind == "manifest_button":
+            detail = "custom plugin action"
+        else:
+            continue
+        description = str(entry.get("description") or "").strip()
+        line = f"{label}: {detail}"
+        if description:
+            line += f" — {description}"
+        lines.append(line)
+    lines.append("Action results are shown in the status button beneath the controls.")
+    return "\n".join(lines)
+
+
+def _plugin_pmf_entries(name):
+    """Return PMF help metadata with the live state of each toggle."""
+    try:
+        from pyUltroid.ultroid import core
+
+        entries = core.manifest.get_entries(name)
+        for entry in entries:
+            if entry.get("type") == "toggle":
+                entry["state"] = core.manifest.get_state(entry.get("toggle_key", ""))
+        return entries
+    except (ImportError, AttributeError, KeyError, TypeError, ValueError):
+        return []
+
+
+def _plugin_help_markup(
+    name, entries=(), patterns=(), category="Plugins", pmf_entries=()
+):
+    """Build one plugin reference with collapsible rich Docs and PMF guidance."""
+    commands = list(
+        dict.fromkeys(command_syntax(pattern, HNDLR) for pattern in patterns or ())
+    )
+    pmf_entries = list(pmf_entries or ())
+    total_handlers = len(commands) + len(pmf_entries)
+    body = "".join(str(entry) for entry in entries or ())
+    blocks = (
+        RichBlocks(engine="rich", format="html", is_bot=True)
+        .header(_plugin_title(name), level=2)
+        .paragraph("Browse this plugin's command handlers, documentation, and controls.")
+    )
+    intro_html, _files = render_blocks_native_html(normalize_blocks(blocks))
+    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview.header("Overview", level=2)
+    contains = f"{len(commands)} command(s)"
+    if pmf_entries:
+        contains += f"; {len(pmf_entries)} PMF control(s)"
+    overview.table(
+        [
+            ["Section name", "Total handlers", "Contains"],
+            [str(category), str(total_handlers), contains],
+        ],
+        caption="Plugin overview",
+        is_bordered=True,
+        is_striped=True,
+    )
+    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
+    detail_blocks = RichBlocks(engine="rich", format="html", is_bot=True)
+    if commands:
+        detail_blocks.expandable("Commands", "\n".join(commands))
+    if pmf_entries:
+        detail_blocks.expandable("PMF guide", _pmf_guide_text(pmf_entries))
+    details_html, _files = render_blocks_native_html(normalize_blocks(detail_blocks))
+    if body.strip():
+        converted = _markdown_docs_markup(body)
+        body_html = converted.text if converted else html.escape(body)
+    else:
+        body_html = "No documentation is registered for this plugin."
+    documentation = f"<blockquote expandable><b>Docs</b>\n{body_html}</blockquote>"
+    if not commands:
+        documentation += "<p>No commands are registered for this plugin.</p>"
+    footer_total = total_handlers
+    return RichMarkup(
+        f"{intro_html}<hr>{overview_html}<hr>{details_html}{documentation}"
+        f"<hr><p><i>{_page_footer(1, 1, footer_total)}</i></p>",
+        "html",
+    )
 
 
 @ultroid_cmd(pattern="help( (.*)|$)")
 async def _help(ult):
     plug = ult.pattern_match.group(1).strip()
-    chat = await ult.get_chat()
     if plug:
+        official_help = HELP.get("Official") or {}
+        addons_help = HELP.get("Addons") or {}
+        vcbot_help = HELP.get("VCBot") or {}
         try:
-            if plug in HELP["Official"]:
-                output = f"**Plugin** - `{plug}`\n"
-                for i in HELP["Official"][plug]:
-                    output += i
-                output += "\n© @TeamUltroid"
-                await ult.eor(output)
-            elif HELP.get("Addons") and plug in HELP["Addons"]:
-                output = f"**Plugin** - `{plug}`\n"
-                for i in HELP["Addons"][plug]:
-                    output += i
-                output += "\n© @TeamUltroid"
-                await ult.eor(output)
-            elif HELP.get("VCBot") and plug in HELP["VCBot"]:
-                output = f"**Plugin** - `{plug}`\n"
-                for i in HELP["VCBot"][plug]:
-                    output += i
-                output += "\n© @TeamUltroid"
-                await ult.eor(output)
-            else:
-                try:
-                    x = get_string("help_11").format(plug)
-                    for d in LIST[plug]:
-                        x += HNDLR + d
-                        x += "\n"
-                    x += "\n© @TeamUltroid"
-                    await ult.eor(x)
-                except Exception:
-                    file = None
-                    compare_strings = []
-                    for file_name in LIST:
-                        compare_strings.append(file_name)
-                        value = LIST[file_name]
-                        for j in value:
-                            j = fns.cmd_regex_replace(j)
-                            compare_strings.append(j)
-                            if j.strip() == plug:
-                                file = file_name
-                                break
-                    if not file:
-                        text = f"`{plug}` is not a valid plugin!"
-                        best_match = None
-                        for _ in compare_strings:
-                            if plug in _ and not _.startswith("_"):
-                                best_match = _
-                                break
-                        if best_match:
-                            text += f"\nDid you mean `{best_match}`?"
-                        return await ult.eor(text)
-                    output = f"**Command** `{plug}` **found in plugin** - `{file}`\n"
-                    if file in HELP["Official"]:
-                        for i in HELP["Official"][file]:
-                            output += i
-                    elif HELP.get("Addons") and file in HELP["Addons"]:
-                        for i in HELP["Addons"][file]:
-                            output += i
-                    elif HELP.get("VCBot") and file in HELP["VCBot"]:
-                        for i in HELP["VCBot"][file]:
-                            output += i
-                    output += "\n© @TeamUltroid"
-                    await ult.eor(output)
+            help_maps = (official_help, addons_help, vcbot_help)
+            plugin_name = next(
+                (
+                    name
+                    for help_map in help_maps
+                    for name in help_map
+                    if name.casefold() == plug.casefold()
+                ),
+                next(
+                    (name for name in LIST if name.casefold() == plug.casefold()), None
+                ),
+            )
+            if plugin_name:
+                category = next(
+                    (
+                        label
+                        for label, help_map in (
+                            ("Plugins", official_help),
+                            ("Add-ons", addons_help),
+                            ("Voice Chat", vcbot_help),
+                        )
+                        if plugin_name in help_map
+                    ),
+                    "Plugins",
+                )
+                entries = next(
+                    (
+                        help_map[plugin_name]
+                        for help_map in help_maps
+                        if plugin_name in help_map
+                    ),
+                    (),
+                )
+                output = _plugin_help_markup(
+                    plugin_name,
+                    entries=entries,
+                    patterns=command_patterns(plugin_name, LIST),
+                    category=category,
+                    pmf_entries=_plugin_pmf_entries(plugin_name),
+                )
+                return await _edit_help(ult, output)
+
+            file = next(
+                (
+                    file_name
+                    for file_name, patterns in LIST.items()
+                    if any(command_matches(pattern, plug) for pattern in patterns)
+                ),
+                None,
+            )
+            if file:
+                category = next(
+                    (
+                        label
+                        for label, help_map in (
+                            ("Plugins", official_help),
+                            ("Add-ons", addons_help),
+                            ("Voice Chat", vcbot_help),
+                        )
+                        if file in help_map
+                    ),
+                    "Plugins",
+                )
+                entries = next(
+                    (help_map[file] for help_map in help_maps if file in help_map),
+                    (),
+                )
+                output = _plugin_help_markup(
+                    file,
+                    entries=entries,
+                    patterns=command_patterns(file, LIST),
+                    category=category,
+                    pmf_entries=_plugin_pmf_entries(file),
+                )
+                return await _edit_help(ult, output)
+
+            suggestions = sorted(
+                {
+                    name
+                    for name in [
+                        *LIST,
+                        *(
+                            alias
+                            for patterns in LIST.values()
+                            for p in patterns
+                            for alias in command_aliases(p)
+                        ),
+                    ]
+                    if plug.casefold() in name.casefold() and not name.startswith("_")
+                },
+                key=str.casefold,
+            )
+            output = f"<code>{html.escape(plug)}</code> is not a plugin or command."
+            if suggestions:
+                output += "\n\nDid you mean: " + ", ".join(
+                    f"<code>{html.escape(item)}</code>" for item in suggestions[:5]
+                )
+            return await _edit_help(ult, output)
         except Exception as er:
             LOGS.exception(er)
-            await ult.eor("Error 🤔 occured.")
+            await _edit_help(ult, "<b>Help could not be opened.</b> Please try again.")
     else:
         inline_failed = False
         inline_reason = ""
@@ -426,7 +511,7 @@ async def _help(ult):
             results = await ult.client.inline_query(asst.me.username, "ultd")
             if results:
                 await results[0].click(
-                    chat.id, reply_to=ult.reply_to_msg_id, hide_via=False
+                    ult.chat_id, reply_to=ult.reply_to_msg_id, hide_via=False
                 )
                 await ult.delete()
                 return

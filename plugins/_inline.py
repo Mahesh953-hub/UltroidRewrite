@@ -5,22 +5,33 @@
 # PLease read the GNU Affero General Public License in
 # <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
 
+import html
 import re
 import time
 from datetime import datetime
+from math import ceil
 from os import remove
 
 from telethon import Button
 from telethon.tl.types import InputWebDocument, Message
 from telethon.utils import resolve_bot_file_id
 
+from pyUltroid._core import (
+    InlineResultBuilder,
+    build_menu_grid,
+)
 from pyUltroid._core._cbs import cb, cb_exact_pattern, cb_pattern
-from pyUltroid._core import InlineResultBuilder, build_menu_grid
-from pyUltroid.ultroid import core
-from pyUltroid._core import PLUGIN_MANIFEST_RESULT_BUDGET
+from pyUltroid._core.richmsg import (
+    RichBlocks,
+    RichMarkup,
+    edit_rich,
+    normalize_blocks,
+    render_blocks_native_html,
+)
 from pyUltroid.dB._core import HELP, LIST
 from pyUltroid.fns import fns
-from pyUltroid.fns import fns
+from pyUltroid.fns.command_help import command_patterns, command_syntax
+from pyUltroid.ultroid import core
 
 from . import (
     HNDLR,
@@ -28,17 +39,19 @@ from . import (
     OWNER_NAME,
     InlinePlugin,
     asst,
+    callback,
     get_string,
+    in_pattern,
     inline_pic,
     start_time,
     udB,
-    callback,
-    in_pattern,
 )
 from ._help import (
-    _help_body,
-    _mdv3_text,
-    _parse_mode_kwargs,
+    _help_blocks,
+    _markdown_docs_markup,
+    _page_footer,
+    _plugin_pmf_entries,
+    _pmf_guide_text,
     main_help_menu_buttons,
 )
 
@@ -108,6 +121,149 @@ def _btn(text: str, *, data=None, url=None, preset=None):
     if url is not None:
         return Button.url(text, url=url)
     return Button.inline(text, data=data)
+
+
+def _as_html(text):
+    markup = _markdown_docs_markup(str(text))
+    return markup.text if markup else html.escape(str(text))
+
+
+def _catalog_help_blocks(key, index=0):
+    """Build an overview-first catalog page with live totals and pagination."""
+    catalogs = HELP.get(key) or {}
+    title = {
+        "Official": "Core plugin library",
+        "Addons": "Add-on library",
+        "VCBot": "Voice chat library",
+    }.get(key, "Plugin library")
+    handlers = sum(
+        len(command_patterns(name, LIST)) + len(_plugin_pmf_entries(name))
+        for name in catalogs
+    )
+    try:
+        rows = max(1, int(udB.get_key("HELP_ROWS") or 5))
+        cols = max(1, int(udB.get_key("HELP_COLUMNS") or 2))
+    except (TypeError, ValueError):
+        rows, cols = 5, 2
+    page_size = rows * cols
+    page_count = max(1, ceil(len(catalogs) / page_size))
+    try:
+        page = max(0, min(int(index), page_count - 1))
+    except (TypeError, ValueError):
+        page = 0
+    header = RichBlocks(engine="rich", format="html", is_bot=True)
+    header.header(title, level=2)
+    header.paragraph(
+        "Browse this library to open a plugin's handlers, documentation, and controls."
+    )
+    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview.header("Overview", level=2)
+    overview.table(
+        [
+            ["Section name", "Total handlers", "Contains"],
+            [title, str(handlers), f"{len(catalogs)} plugin(s)"],
+        ],
+        caption="Library overview",
+        is_bordered=True,
+        is_striped=True,
+    )
+    if not catalogs:
+        overview.paragraph("No modules are currently available in this library.")
+    header_html, _files = render_blocks_native_html(normalize_blocks(header))
+    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
+    return RichMarkup(
+        f"{header_html}<hr>{overview_html}<hr>"
+        f"<p><i>{_page_footer(page + 1, page_count, len(catalogs))}</i></p>",
+        "html",
+    )
+
+
+def _plugin_has_pmf_or_module(name):
+    """Whether a plugin has PMF controls or a class on the Module layer."""
+    manifest = getattr(core, "manifest", None)
+    if manifest is not None and manifest.get_entries(name):
+        return True
+    module_registry = getattr(core, "modules", None)
+    modules = getattr(module_registry, "modules", {}) or {}
+    module_path = str(name).replace("\\", "/").removesuffix(".py").replace("/", ".")
+    return any(
+        type(module).__module__ == module_path
+        or type(module).__module__.startswith(f"{module_path}.")
+        for module in modules.values()
+    )
+
+
+def _plugin_card_markup(file, key, body, patterns, pmf_entries=()):
+    """Assemble a native rich plugin reference with collapsible Docs and PMF."""
+    commands = list(
+        dict.fromkeys(command_syntax(pattern, HNDLR) for pattern in patterns or ())
+    )
+    pmf_entries = list(pmf_entries or ())
+    total_handlers = len(commands) + len(pmf_entries)
+    category = {
+        "Official": "Core plugins",
+        "Addons": "Add-ons",
+        "VCBot": "Voice chat",
+    }.get(key, str(key))
+    header = RichBlocks(engine="rich", format="html", is_bot=True)
+    header.header(_plugin_label(file), level=2)
+    header.paragraph(
+        "Browse this plugin's command handlers, documentation, and controls."
+    )
+    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview.header("Overview", level=2)
+    contains = f"{len(commands)} command(s)"
+    if pmf_entries:
+        contains += f"; {len(pmf_entries)} PMF control(s)"
+    overview.table(
+        [
+            ["Section name", "Total handlers", "Contains"],
+            [category, str(total_handlers), contains],
+        ],
+        caption="Plugin overview",
+        is_bordered=True,
+        is_striped=True,
+    )
+    details = RichBlocks(engine="rich", format="html", is_bot=True)
+    if commands:
+        details.expandable("Commands", "\n".join(commands))
+    if pmf_entries:
+        details.expandable("PMF guide", _pmf_guide_text(pmf_entries))
+    header_html, _files = render_blocks_native_html(normalize_blocks(header))
+    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
+    details_html, _files = render_blocks_native_html(normalize_blocks(details))
+    documentation = _as_html(body) if body else "No documentation is registered."
+    docs_html = f"<blockquote expandable><b>Docs</b>\n{documentation}</blockquote>"
+    return RichMarkup(
+        f"{header_html}<hr>{overview_html}<hr>{docs_html}{details_html}"
+        f"<hr><p><i>{_page_footer(1, 1, total_handlers)}</i></p>",
+        "html",
+    )
+
+
+async def _edit_rich_callback(event, content, buttons):
+    """Edit a normal or inline callback message with a native RichMessage."""
+    query = getattr(event, "query", None)
+    inline_id = getattr(query, "msg_id", None)
+    if inline_id is not None and type(inline_id).__name__ in {
+        "InputBotInlineMessageID",
+        "InputBotInlineMessageID64",
+    }:
+        peer, message = inline_id, None
+    else:
+        peer, message = event.chat_id, event
+    return await edit_rich(
+        event.client,
+        peer,
+        message,
+        content,
+        engine="rich",
+        format="html",
+        is_bot=True,
+        is_premium=False,
+        buttons=buttons,
+        link_preview=False,
+    )
 
 
 def _styled_sup_buttons():
@@ -219,23 +375,15 @@ async def inline_handler(event):
     builder = InlineResultBuilder(event)
     result = core.inline_cache.get(cache_key)
     if result is None:
-        text, _pm = _help_body(len(z))
-        _pm_kw = _parse_mode_kwargs(_pm)
-        if pic:
-            result = await builder.photo(
-                file=pic,
-                link_preview=False,
-                text=text,
-                buttons=main_help_menu_buttons(),
-                **_pm_kw,
-            )
-        else:
-            result = await builder.article(
-                title="Ultroid Help Menu",
-                text=text,
-                buttons=main_help_menu_buttons(),
-                **_pm_kw,
-            )
+        result = await builder.article_rich(
+            title="Bot Help",
+            payload=_help_blocks().text,
+            engine="rich",
+            format="html",
+            is_premium=False,
+            is_bot=True,
+            buttons=main_help_menu_buttons(),
+        )
         if result is not None:
             core.inline_cache.set(cache_key, result, ttl=300)
     await builder.answer(
@@ -266,26 +414,20 @@ async def _(event):
 
 @callback("ownr", owner=True)
 async def setting(event):
-    z = []
-    for x in LIST.values():
-        z.extend(x)
-    text, _pm = _help_body(len(z))
-    await event.edit(
-        text,
-        file=inline_pic(),
-        link_preview=False,
-        buttons=[
+    await _edit_rich_callback(
+        event,
+        _help_blocks(),
+        [
             [
-                _btn("•Pɪɴɢ•", data="pkng"),
-                _btn("•Uᴘᴛɪᴍᴇ•", data="upp"),
+                _btn("Ping", data="pkng"),
+                _btn("Uptime", data="upp"),
             ],
             [
-                _btn("•Stats•", data="alive"),
-                _btn("•Uᴘᴅᴀᴛᴇ•", data="doupdate"),
+                _btn("Stats", data="alive"),
+                _btn("Update", data="doupdate"),
             ],
             [_btn(get_string("btn_back"), data=cb("assistant", "inline", "main"))],
         ],
-        **_parse_mode_kwargs(_pm),
     )
 
 
@@ -300,12 +442,10 @@ async def help_func(ult):
     elif key == "Addons" and HELP.get("Addons") is None:
         return await ult.answer(get_string("help_13").format(HNDLR), alert=True)
     count = int(count) if count else 0
-    text, _pm = _mdv3_text(_strings.get(key, ""), OWNER_NAME, len(HELP.get(key)))
-    await ult.edit(
-        text,
-        buttons=page_num(count, key),
-        link_preview=False,
-        **_parse_mode_kwargs(_pm),
+    await _edit_rich_callback(
+        ult,
+        _catalog_help_blocks(key, count),
+        page_num(count, key),
     )
 
 
@@ -319,118 +459,80 @@ async def uptd_plugin(event):
 
 async def _show_plugin(event, key, file, index):
     key_ = HELP.get(key, [])
-    hel_p = f"Plugin Name - `{file}`\n"
     help_ = ""
-    from_registered_help = False
     try:
         for i in key_[file]:
             help_ += i
-        from_registered_help = True
     except Exception:
-        if file in LIST:
-            help_ = get_string("help_11").format(file)
-            for d in LIST[file]:
-                help_ += HNDLR + d
-                help_ += "\n"
-    if not help_:
-        help_ = f"{file} has no Detailed Help!"
-    help_ += "\n© @TeamUltroid"
-    # C1: an expandable-blockquote (MarkdownV3) variant of the same body,
-    # built only when the text actually came from the registered help
-    # cache (never for the LIST-command-list fallback above, which has a
-    # different shape than what `plugin_help` cached). `rich_help_`/
-    # `rich_parse_mode` stay `None` on any gating/import failure so the
-    # classic path below is always the one sent — this never changes the
-    # classic text or the callback-data on the buttons.
+        help_ = ""
+    patterns = command_patterns(file, LIST)
     rich_help_ = None
-    rich_parse_mode = None
-    if from_registered_help:
+    try:
+        from pyUltroid.ultroid import core
+    except Exception:
+        core = None
+    if core is not None:
         try:
-            from ._rebrand import ui_cards_enabled
-
-            if ui_cards_enabled():
-                from pyUltroid._core.entities import RICH_MD
-                from pyUltroid.ultroid import core
-
-                if RICH_MD.available:
-                    candidate = core.plugin_help.get_rich(file)
-                    if candidate and candidate != core.plugin_help.get(file):
-                        rich_help_ = candidate + "\n© @TeamUltroid"
-                        rich_parse_mode = RICH_MD
+            candidate = core.plugin_help.get_rich(file)
+            if candidate and candidate != core.plugin_help.get(file):
+                rich_help_ = candidate
         except Exception:
             rich_help_ = None
-            rich_parse_mode = None
     buttons = []
-    if inline_pic():
-        data = cb("assistant", "inline", "send_plugin", key, file, index)
-        buttons.append(
-            [
-                _btn(
-                    get_string("btn_send_plugin"),
-                    data=data,
-                )
-            ]
-        )
+    pmf_entries = _plugin_pmf_entries(file) if core is not None else []
+    data = cb("assistant", "inline", "send_plugin", key, file, index)
+    buttons.append(
+        [
+            _btn(
+                get_string("btn_send_plugin"),
+                data=data,
+                preset="primary",
+            )
+        ]
+    )
     # --- Plugin manifest buttons ---
     styled = _ui_buttons_styled()
-    try:
-        entries = core.manifest.get_entries(file)
-        for ent in entries:
-            etype = ent.get("type")
-            tkey = ent.get("toggle_key", "")
-            icon = ent.get("icon", "")
-            label = ent.get("label", "")
+    if core is not None:
+        try:
+            entries = pmf_entries
+            for ent in entries:
+                etype = ent.get("type")
+                tkey = ent.get("toggle_key", "")
+                label = ent.get("label", "")
 
-            styled_row = None
-            if styled:
-                try:
-                    from pyUltroid._core.buttonkit import plugin_status_buttons
-
-                    state = (
-                        core.manifest.get_state(tkey) if etype == "toggle" else None
+                if etype == "toggle":
+                    state = core.manifest.get_state(tkey)
+                    btn_label = f"{label}: {'On' if state else 'Off'}"
+                    buttons.append(
+                        [
+                            _btn(
+                                btn_label,
+                                data=f"pltog_{tkey}",
+                                preset="success" if state and styled else None,
+                            )
+                        ]
                     )
-                    built = plugin_status_buttons(ent, state=state)
-                    if built:
-                        styled_row = built
-                except Exception:
-                    styled_row = None
-            if styled_row is not None:
-                buttons.append(styled_row)
-                continue
 
-            if etype == "toggle":
-                state = core.manifest.get_state(tkey)
-                btn_label = (
-                    f"{icon} {label}: {'✅' if state else '❌'}"
-                    if icon
-                    else f"{label}: {'✅' if state else '❌'}"
-                )
-                buttons.append([_btn(btn_label.strip(), data=f"pltog_{tkey}")])
+                elif etype == "action":
+                    buttons.append([_btn(label, data=f"plact_{tkey}")])
 
-            elif etype == "action":
-                btn_label = f"{icon} {label}" if icon else label
-                buttons.append([_btn(btn_label.strip(), data=f"plact_{tkey}")])
+                elif etype == "manifest_button":
+                    color = ent.get("color", "blue")
+                    preset = {
+                        "green": "success",
+                        "red": "danger",
+                        "blue": "primary",
+                        "grey": None,
+                    }.get(str(color).lower())
+                    if not _ui_buttons_styled():
+                        preset = None
+                    buttons.append([_btn(label, data=f"plman_{tkey}", preset=preset)])
 
-            elif etype == "manifest_button":
-                color = ent.get("color", "blue")
-                prefix = {"green": "🟢 ", "red": "🔴 ", "grey": "⚪️ "}.get(
-                    color, "🔵 "
-                )
-                btn_label = f"{prefix}{label}"
-                buttons.append([_btn(btn_label.strip(), data=f"plman_{tkey}")])
-
-        # --- Placeholder button ---
-        # Delegates the on/error/url/idle decision to `_placeholder_button`
-        # (shared with the pltog_/plact_/plman_ callbacks below); the
-        # no-entries case keeps its own static "{^}" — it never reflects
-        # `ph` state, unlike the has-entries case.
-        ph = core.manifest.get_placeholder(file)
-        if entries:
-            buttons.append([_placeholder_button(ph)])
-        else:
-            buttons.append([_btn("{^}", data="plph_info", preset="default")])
-    except Exception:
-        pass
+            ph = core.manifest.get_placeholder(file)
+            if entries:
+                buttons.append([_placeholder_button(ph)])
+        except Exception:
+            pass
     # --- End manifest buttons ---
     data = cb(
         "assistant",
@@ -441,21 +543,47 @@ async def _show_plugin(event, key, file, index):
     )
     buttons.append(
         [
-            _btn(get_string("btn_back"), data=data),
+            _btn(
+                f"Back to { {'Official': 'Plugins', 'Addons': 'Add-ons', 'VCBot': 'Voice Chat'}.get(key, key) }",
+                data=data,
+                preset="primary",
+            ),
         ]
     )
     try:
-        if rich_help_ is not None and rich_parse_mode is not None:
-            await event.edit(rich_help_, buttons=buttons, parse_mode=rich_parse_mode)
-        else:
-            await event.edit(help_, buttons=buttons)
+        await _edit_rich_callback(
+            event,
+            _plugin_card_markup(
+                file,
+                key,
+                rich_help_ or help_,
+                patterns,
+                pmf_entries=pmf_entries,
+            ),
+            buttons,
+        )
     except Exception as er:
         LOGS.exception(er)
-        help = f"Do `{HNDLR}help {key}` to get list of commands."
-        await event.edit(help, buttons=buttons)
+        fallback = (
+            RichBlocks(engine="rich", format="html", is_bot=True)
+            .header("Plugin guide unavailable", level=2)
+            .paragraph(
+                "The guide could not be rendered in place. Use this command instead:"
+            )
+            .code(f"{HNDLR}help {key}")
+        )
+        await _edit_rich_callback(event, fallback, buttons)
 
 
-# ── manifest callbacks ────────────────────────────────────────────────
+# Manifest callbacks
+
+
+def _button_data(button):
+    """Read callback data from both legacy and layer-229 inline buttons."""
+    data = getattr(button, "data", None)
+    if data is not None:
+        return data
+    return getattr(getattr(button, "type", None), "data", None)
 
 
 def _rebuild_buttons(buttons, data_str: str, replacement):
@@ -466,7 +594,8 @@ def _rebuild_buttons(buttons, data_str: str, replacement):
     for row in buttons:
         new_row = []
         for btn in row:
-            if btn.data and btn.data.decode("utf-8") == data_str:
+            data = _button_data(btn)
+            if data and data.decode("utf-8") == data_str:
                 new_row.append(replacement)
             else:
                 new_row.append(btn)
@@ -477,8 +606,8 @@ def _rebuild_buttons(buttons, data_str: str, replacement):
 def _placeholder_button(ph: dict):
     """Build the placeholder button for the current ``ph`` state.
 
-    Mirrors ``core.manifest.set_placeholder``'s precedence — is_error
-    (``{^}`` + truncated text) > url (URL button) > text (📋 copy button) >
+    Mirrors ``core.manifest.set_placeholder``'s precedence: error
+    (``{^}`` + truncated text) > URL button > copy-text button >
     idle "ready" button — styled via :func:`_btn` when ``.ui buttons`` is
     ``styled`` (falls back to classic on any error), otherwise always the
     classic button. Callback-data (``plph_info``/``plph_copy``) and URLs
@@ -492,7 +621,7 @@ def _placeholder_button(ph: dict):
     if ph.get("url"):
         return _btn(ph_text[:60] or "Open", url=ph["url"], preset=preset or "primary")
     if ph.get("text"):
-        return _btn(f"📋 {ph_text[:40]}", data="plph_copy", preset=preset or "default")
+        return _btn(ph_text[:40], data="plph_copy", preset=preset or "default")
     return _btn(get_string("btn_ready"), data="plph_info", preset=preset or "success")
 
 
@@ -514,25 +643,13 @@ async def _cb_toggle(event):
     buttons = msg.buttons if msg else None
     entry = core.manifest.get_entry(toggle_key)
     if entry:
-        icon = entry.get("icon", "")
         label = entry.get("label", "")
-        new_label = (
-            f"{icon} {label}: {'✅' if new_state else '❌'}"
-            if icon
-            else f"{label}: {'✅' if new_state else '❌'}"
+        new_label = f"{label}: {'On' if new_state else 'Off'}"
+        replacement = _btn(
+            new_label,
+            data=f"pltog_{toggle_key}",
+            preset="success" if new_state and _ui_buttons_styled() else None,
         )
-        replacement = None
-        if _ui_buttons_styled():
-            try:
-                from pyUltroid._core.buttonkit import state_chip
-
-                replacement = state_chip(
-                    toggle_key, bool(new_state), icon=icon, label=label
-                )
-            except Exception:
-                replacement = None
-        if replacement is None:
-            replacement = _btn(new_label.strip(), data=f"pltog_{toggle_key}")
         rebuilt = _rebuild_buttons(buttons, f"pltog_{toggle_key}", replacement)
         if rebuilt:
             # Update placeholder too.
@@ -546,7 +663,8 @@ async def _cb_toggle(event):
                 )
                 for row in rebuilt:
                     for i, btn in enumerate(row):
-                        if btn.data and btn.data.decode("utf-8") == "plph_copy":
+                        data = _button_data(btn)
+                        if data and data.decode("utf-8") == "plph_copy":
                             row[i] = ph_btn
                             break
             await event.edit(buttons=rebuilt)
@@ -578,7 +696,8 @@ async def _cb_action(event):
         for row in buttons:
             new_row = []
             for btn in row:
-                if btn.data and btn.data.decode("utf-8") in ("plph_info", "plph_copy"):
+                data = _button_data(btn)
+                if data and data.decode("utf-8") in ("plph_info", "plph_copy"):
                     new_row.append(ph_btn)
                 else:
                     new_row.append(btn)
@@ -612,7 +731,8 @@ async def _cb_manifest(event):
         for row in buttons:
             new_row = []
             for btn in row:
-                if btn.data and btn.data.decode("utf-8") in ("plph_info", "plph_copy"):
+                data = _button_data(btn)
+                if data and data.decode("utf-8") in ("plph_info", "plph_copy"):
                     new_row.append(ph_btn)
                 else:
                     new_row.append(btn)
@@ -669,14 +789,14 @@ async def _(event):
     start = datetime.now()
     end = datetime.now()
     ms = (end - start).microseconds
-    pin = f"🌋Pɪɴɢ = {ms} microseconds"
+    pin = f"Ping: {ms} microseconds"
     await event.answer(pin, cache_time=0, alert=True)
 
 
 @callback(data="upp", owner=True)
 async def _(event):
     uptime = fns.time_formatter((time.time() - start_time) * 1000)
-    pin = f"🙋Uᴘᴛɪᴍᴇ = {uptime}"
+    pin = f"Uptime: {uptime}"
     await event.answer(pin, cache_time=0, alert=True)
 
 
@@ -699,15 +819,10 @@ async def _(e):
 
 @callback(cb_exact_pattern("assistant", "inline", "main"), owner=True)
 async def opner(event):
-    z = []
-    for x in LIST.values():
-        z.extend(x)
-    text, _pm = _help_body(len(z))
-    await event.edit(
-        text,
-        buttons=main_help_menu_buttons(),
-        link_preview=False,
-        **_parse_mode_kwargs(_pm),
+    await _edit_rich_callback(
+        event,
+        _help_blocks(),
+        main_help_menu_buttons(),
     )
 
 
@@ -722,40 +837,29 @@ async def on_plug_in_callback_query_handler(event):
 
 
 def _page_num_back_button(key=None):
-    """The single-row 'Back' button when there's only one plugin page.
-
-    GREEN (``success``) on the add-ons page, RED (``danger``) everywhere
-    else — the add-ons page's back button is the one exception to the
-    "back to main menu = danger" rule.
-    """
+    """The neutral Back button when there is only one plugin page."""
     return _btn(
         get_string("btn_back_page"),
         data=cb("assistant", "inline", "main"),
-        preset="success" if key == "Addons" else "danger",
+        preset=None,
     )
 
 
 def _page_num_nav_row(key, index):
-    """Prev / Back / Next nav row — styled chips when ``.ui buttons`` is styled.
-
-    Prev/Next are BLUE (``primary``); Back-to-main is RED (``danger``) except
-    on the add-ons page, where it is GREEN (``success``).
-    """
+    """Prev / Back / Next nav row with neutral Back and primary paging controls."""
     return [
         _btn(
             get_string("btn_previous"),
             data=cb("assistant", "inline", "help_menu", key, index - 1),
-            preset="primary",
         ),
         _btn(
             get_string("btn_back_page"),
             data=cb("assistant", "inline", "main"),
-            preset="success" if key == "Addons" else "danger",
+            preset=None,
         ),
         _btn(
             get_string("btn_next"),
             data=cb("assistant", "inline", "help_menu", key, index + 1),
-            preset="primary",
         ),
     ]
 
@@ -770,12 +874,11 @@ def page_num(index, key):
     rows = udB.get_key("HELP_ROWS") or 5
     cols = udB.get_key("HELP_COLUMNS") or 2
     loaded = HELP.get(key, [])
-    emoji = udB.get_key("EMOJI_IN_HELP") or "✘"
     List = [
         _btn(
-            f"{emoji} {_plugin_label(x)} {emoji}",
+            _plugin_label(x),
             data=cb("assistant", "inline", "plugin", key, x, index),
-            preset="primary",
+            preset="success" if _plugin_has_pmf_or_module(x) else None,
         )
         for x in sorted(loaded)
     ]

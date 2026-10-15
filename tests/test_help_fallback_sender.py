@@ -50,13 +50,15 @@ def _handler_namespace(assistant, send_rich):
     }
 
 
-def _event(user_client, *, deleted=None, reply_to_msg_id=17):
+def _event(user_client, *, deleted=None, reply_to_msg_id=17, get_chat_calls=None):
     class Event:
         client = user_client
         chat_id = 42
         pattern_match = SimpleNamespace(group=lambda _index: "")
 
         async def get_chat(self):
+            if get_chat_calls is not None:
+                get_chat_calls.append(True)
             return SimpleNamespace(id=42)
 
         async def delete(self):
@@ -71,6 +73,7 @@ def _event(user_client, *, deleted=None, reply_to_msg_id=17):
 def test_inline_help_clicks_result_with_bot_attribution_and_no_second_message():
     calls = []
     deleted = []
+    get_chat_calls = []
     fallback_calls = []
 
     class InlineResult:
@@ -89,13 +92,16 @@ def test_inline_help_clicks_result_with_bot_attribution_and_no_second_message():
         fallback_calls.append((args, kwargs))
 
     handler = _load_help_handler(_handler_namespace(assistant, send_rich))
-    asyncio.run(handler(_event(user_client, deleted=deleted)))
+    asyncio.run(
+        handler(_event(user_client, deleted=deleted, get_chat_calls=get_chat_calls))
+    )
 
     assert calls == [
         ("query", "helper", "ultd"),
         ("click", 42, 17, False),
     ]
     assert deleted == [True]
+    assert get_chat_calls == []
     assert fallback_calls == []
 
 

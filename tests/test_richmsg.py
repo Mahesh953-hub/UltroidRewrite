@@ -46,6 +46,10 @@ class _ReplyTo:
         self.message_id = message_id
 
 
+class _InlineMessageID(_Payload):
+    pass
+
+
 class _Request(_Payload):
     pass
 
@@ -92,11 +96,14 @@ def rich_schema(monkeypatch):
         InputRichFilePhoto=_RichPhoto,
         InputRichFileDocument=_RichDocument,
         InputReplyToMessage=_ReplyTo,
+        InputBotInlineMessageID=_InlineMessageID,
+        InputBotInlineMessageID64=_InlineMessageID,
     )
     functions = SimpleNamespace(
         messages=SimpleNamespace(
             SendMessageRequest=_Request,
             EditMessageRequest=_Request,
+            EditInlineBotMessageRequest=_Request,
         )
     )
     monkeypatch.setattr(richmsg, "_types", types)
@@ -342,3 +349,29 @@ def test_edit_rich_uses_native_markdown_without_rerouting(rich_schema):
     assert result == "raw-result"
     assert client.requests[0].id == 7
     assert isinstance(client.requests[0].rich_message, _RichMarkdown)
+
+
+def test_edit_rich_targets_inline_message_ids_with_native_rich_schema(rich_schema):
+    client = _Client(bot=True)
+    inline_id = _InlineMessageID(dc_id=2)
+
+    result = asyncio.run(
+        richmsg.edit_rich(
+            client,
+            inline_id,
+            None,
+            _blocks(),
+            engine="rich",
+            format="html",
+            is_premium=False,
+            is_bot=True,
+            buttons=[["Back"]],
+        )
+    )
+
+    assert result == "raw-result"
+    assert len(client.requests) == 1
+    request = client.requests[0]
+    assert request.id is inline_id
+    assert isinstance(request.rich_message, _RichHTML)
+    assert request.reply_markup == ("markup", [["Back"]])
