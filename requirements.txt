@@ -1,0 +1,70 @@
+mutagen
+GitPython
+fastapi
+uvicorn
+nest-asyncio
+dnspython
+redis
+pymongo
+psycopg2-binary
+git+https://github.com/Mahesh953-hub/Telethon.git
+py-tgcalls
+pycryptodome
+mutagen
+pytubefix
+python-decouple
+python-dotenv
+pyshorteners
+google-search-results
+motor
+pydantic
+aiofiles
+tesseract
+spotipy
+pillow
+ffmpeg-python
+authlib
+coloredlogs
+google-genai
+pyrogram
+urllib3
+huggingface_hub
+azure-ai-inference
+autoevals
+openai>=1.40
+duckduckgo_search
+git+https://github.com/ufoptg/covid.git
+emoji
+fonttools
+gtts
+gingerit
+jikanpy
+git+https://github.com/New-dev0/AsyncLyricsExtractor.git
+git+https://github.com/ufoptg/drawHub.git
+pokedex.py
+pyfiglet
+pygments
+pyjokes
+quotefancy
+shazamio
+speechrecognition
+speedtest-cli
+textblob
+wikipedia
+https://github.com/ufoptg/google_trans_new/archive/refs/tags/1.2.0.zip
+markdownify
+meval
+itsdangerous
+wget
+g4f
+pypdf
+pytesseract
+pdf2image
+PyMuPDF
+
+# SYSTEM PACKAGES (not pip-installable) required by the voice-chat stack and
+# the portrait error card:
+#   ffmpeg             apt-get install -y ffmpeg
+#   fonts-dejavu-core  apt-get install -y fonts-dejavu-core
+# Verify the font with:
+#   python -c "from pyUltroid.imaging._errorcard import mono_available; print(mono_available())"

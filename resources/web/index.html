@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SarahUB Setup</title>
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M8 12.5l2.4 2.4L16 9.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <div>
+        <h1>SarahUB Setup</h1>
+        <p id="status-line" class="muted">checking server…</p>
+      </div>
+    </div>
+  </header>
+
+  <nav class="steps" aria-label="Setup progress">
+    <ol>
+      <li class="step is-current" data-step="keys">
+        <span class="step-num">1</span>
+        <span class="step-label">API credentials</span>
+      </li>
+      <li class="step" data-step="login">
+        <span class="step-num">2</span>
+        <span class="step-label">Log in</span>
+      </li>
+      <li class="step" data-step="complete">
+        <span class="step-num">3</span>
+        <span class="step-label">Finish</span>
+      </li>
+    </ol>
+  </nav>
+
+  <section id="token-banner" class="card banner hidden">
+    <strong>No setup token.</strong> Open the token-gated URL printed in the
+    terminal (<code>?token=…</code>). API calls will fail until then.
+  </section>
+
+  <!-- Step 1: API keys -->
+  <section class="card" id="step-keys">
+    <h2><span class="badge">1</span> API credentials</h2>
+    <p class="muted">Get <code>API_ID</code>/<code>API_HASH</code> from
+      <a href="https://my.telegram.org" rel="noopener">my.telegram.org</a>.
+      Values are written to <code>.env</code> on the server and never
+      sent back to this page.</p>
+    <form id="keys-form">
+      <label>API_ID <input name="api_id" inputmode="numeric" required></label>
+      <label>API_HASH <input name="api_hash" required autocomplete="off"></label>
+      <label>BOT_TOKEN <span class="muted">(optional)</span>
+        <input name="bot_token" autocomplete="off" placeholder="123456:ABC…"></label>
+      <label>LOG_CHANNEL <span class="muted">(optional chat id)</span>
+        <input name="log_channel" inputmode="numeric" placeholder="-100…"></label>
+      <button type="submit" class="btn btn-primary">Save credentials</button>
+    </form>
+    <p id="keys-result" class="muted result"></p>
+  </section>
+
+  <!-- Step 2: login -->
+  <section class="card hidden" id="step-login">
+    <h2><span class="badge">2</span> Telegram login</h2>
+    <div class="tabs" role="tablist">
+      <button id="tab-phone" class="tab active" type="button" role="tab">Phone code</button>
+      <button id="tab-qr" class="tab" type="button" role="tab">QR code</button>
+    </div>
+
+    <div id="pane-phone">
+      <form id="phone-form">
+        <label>Phone <input name="phone" placeholder="+15551234567" required></label>
+        <button type="submit" class="btn btn-primary">Send code</button>
+      </form>
+      <form id="otp-form" class="hidden">
+        <label>Login code <input name="code" inputmode="numeric" required></label>
+        <button type="submit" class="btn btn-primary">Sign in</button>
+      </form>
+    </div>
+
+    <div id="pane-qr" class="hidden">
+      <button id="qr-start" type="button" class="btn btn-secondary">Generate QR login</button>
+      <div id="qr-box" class="hidden">
+        <img id="qr-img" alt="QR login code" class="hidden">
+        <p class="muted">Scan with Telegram → Settings → Devices → Link Desktop Device.</p>
+        <p><code id="qr-url" class="break"></code></p>
+        <p id="qr-expires" class="muted"></p>
+      </div>
+    </div>
+
+    <form id="password-form" class="hidden">
+      <label>Two-factor password
+        <input name="password" type="password" required autocomplete="off"></label>
+      <button type="submit" class="btn btn-primary">Submit password</button>
+    </form>
+    <p id="login-result" class="muted result"></p>
+  </section>
+
+  <!-- Step 3: complete -->
+  <section class="card hidden" id="step-complete">
+    <h2><span class="badge">3</span> Start the bot</h2>
+    <p class="muted">Session saved. Finish setup and restart into the full bot.</p>
+    <button id="complete-btn" type="button" class="btn btn-primary">Complete setup &amp; start</button>
+    <p id="complete-result" class="muted result"></p>
+  </section>
+
+  <!-- Logs -->
+  <section class="card">
+    <h2>Live logs</h2>
+    <pre id="logs" class="logs"></pre>
+  </section>
+</main>
+<script src="static/setup.js"></script>
+</body>
+</html>

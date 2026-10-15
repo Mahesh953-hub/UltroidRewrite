@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+# NOTE: this package must never import the union (``pyUltroid.ultroid``) -
+# the composition root imports this package's mixins first, so a union
+# re-export here is a circular import. Consumers import the union from
+# ``pyUltroid.ultroid`` (or the aliases ``pyUltroid.ultroid.core``); the
+# loader patch-point wiring runs at the bottom of that module.
+from .events import (  # noqa: F401
+    InlineResultBuilder,
+    InlineResultCache,
+    build_menu_grid,
+    build_menu_results,
+    render_farewell,
+    render_welcome,
+)
+from .instant import (
+    InlineUnavailable,
+    InstantInline,
+    InstantInlineError,
+    InstantQuery,
+    InstantResult,
+    instant_inline,
+)
+from .manifest import (
+    PLUGIN_MANIFEST_RESULT_BUDGET,
+    ManifestRegistry,
+    action,
+    get_help_chars,
+    handle_manifest,
+    install_missing,
+    manifest,
+    scan_module,
+    toggle,
+)
+from .queue import FID, GID, QueueManager, QueueTask, list_directory_files
+from .webupload import (
+    SERVICE_ALIASES,
+    SERVICE_LABELS,
+    MENU_SERVICES,
+    UPLOAD_SERVICES,
+    CatboxUploader,
+    FileIoUploader,
+    FilebinUploader,
+    LitterboxUploader,
+    NullStUploader,
+    SiaskyUploader,
+    TransferShUploader,
+    UguuUploader,
+    UploadError,
+    UploadResult,
+    WebUploader,
+    get_uploader,
+    resolve_service,
+    upload_to,
+)
+
+__all__ = [
+    "QueueManager",
+    "QueueTask",
+    "GID",
+    "FID",
+    "list_directory_files",
+    "InlineResultBuilder",
+    "InlineResultCache",
+    "build_menu_grid",
+    "build_menu_results",
+    "render_welcome",
+    "render_farewell",
+    "WebUploader",
+    "UploadResult",
+    "UploadError",
+    "get_uploader",
+    "upload_to",
+    "resolve_service",
+    "UPLOAD_SERVICES",
+    "MENU_SERVICES",
+    "SERVICE_LABELS",
+    "SERVICE_ALIASES",
+    "CatboxUploader",
+    "LitterboxUploader",
+    "FileIoUploader",
+    "NullStUploader",
+    "TransferShUploader",
+    "UguuUploader",
+    "FilebinUploader",
+    "SiaskyUploader",
+    "toggle",
+    "action",
+    "manifest",
+    "handle_manifest",
+    "ManifestRegistry",
+    "scan_module",
+    "install_missing",
+    "PLUGIN_MANIFEST_RESULT_BUDGET",
+    "get_help_chars",
+    "InstantInline",
+    "InstantResult",
+    "InstantQuery",
+    "InstantInlineError",
+    "InlineUnavailable",
+    "instant_inline",
+]

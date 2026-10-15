@@ -1,0 +1,735 @@
+name: Azerbaijan
+natively: Azərbaycan
+
+authors:
+  - Cahildi
+
+#commons
+com_1: "`Hazırlanır...`"
+com_2: "`Axtarılır...`"
+com_3: "`Yalnış daxiletmə`"
+com_4: "`Dəstəklənməyən media..`"
+com_5: "`Yüklənir...`"
+com_6: "`Göndərilir...`"
+
+# chatactions
+can_1: "#GBan_Bildiriş daxil oldu.\n\n**İstifadəçi** : {}\n**Səbəb**: {}\n\n`İstifadəçi qadağan olundu.`"
+can_2: "∆ #UsernameUpdate\n\n@{} istifadəçi adı dəyişildi @{}"
+can_3: "∆ #UsernameUpdate\n\n{} İstifadəçi adı silindu. (@{})"
+can_4: "∆ #UsernameUpdate\n\n{} yeni adı' --> @{}"
+
+# help
+help_1: "`{}` adlı plugin yoxdu!"
+help_2: "Bot inline cavab verə bilmir.\nYoxlayın: `{}restart`"
+help_3: "`Botun inline rejimini açın. Bot:` @Botfather."
+help_4: "• Pluginlər"
+help_5: "• Əlavələr"
+help_6: "••Səsli söhbət"
+help_7: "Inline Pluginlər••"
+help_8: "⚙️ Sahib əmrləri"
+help_9: "Parametrlər ⚙️"
+help_10: "••Bağla••"
+help_11: "Plugin adı-{}\n\n✘ Əmrlər bunlardır-\n\n"
+
+# userlogs
+userlogs_1: "Tag Logger-da Ayarladığınız Söhbət İd-si Səhvdir, Xaiş olunur yenidən cəhd edin"
+userlogs_2: "Tag logger aktivləşdirmək üçün məni Tag Logger Chat-a əlavə edin"
+userlogs_3: "Söhbəti tərk edin"
+userlogs_4: "Asistant tag logger kanalına mesaj gondərə bilmir. Asistanı qrupa salıb admin edin.."
+userlogs_5: "Çıxdı: `{}`"
+
+# admintools
+adm_1: "`Mən onun kim olduğunu başa düşə bilmədim!`"
+adm_2: "`Hmm.. Deyəsən, mənim burada heç bir hüququm yoxdur!`"
+adm_3: "`Bir də vaxt verin..`"
+pro_1: "`Userin mesajını yanıtlayın!`"
+pro_2: "{} `indi {} adminidir. Yönətici tağı {}.`"
+de_1: "`Vəzifəni almaq üçün bir mesajı yanıtlayı !`"
+de_2: "{} `is no longer an admin in {}`"
+ban_1: "`Reply to a user or give username to ban him!`"
+ban_2: " `LoL, I can't Ban my Developer 😂`"
+ban_3: "`I don't have the right to ban a user.`"
+ban_4: "{} **was banned by** {} **in** `{}`"
+ban_5: "\n**Reason**: `{}`"
+tban_1: "`Reply to someone or give its id...`"
+tban_2: "`Successfully Banned` `{}` `in {} for {}`"
+unban_1: "`Reply to a user or give username to unban him!`"
+unban_2: "`I don't have the right to unban a user.`"
+unban_3: "{} **was unbanned by** {} **in** `{}`"
+kick_1: "`I don't have the right to kick a user.`"
+kick_2: " `Lol, I can't Kick my Developer`😂"
+kick_3: "`I Cant kick him ever...`"
+kick_4: "{} **was kicked by** {} **in** `{}`"
+pin_1: "`Reply to a message to pin it!`"
+pinned_1: "No Pinned Message Found!"
+unpin_1: "Either reply to a message, or, use `{}unpin all`"
+listpin_1: "There is no message pinned in this group!"
+purge_1: "`Reply to a message to purge from.`"
+purgeall_1: "`Reply to someone's msg to delete.`"
+purgeall_2: "Successfully Purged All Messages from {}"
+
+# akinator
+aki_1: "Oyun dayandırıldı...."
+aki_2: "Oyuna başlayın"
+aki_3: "Vaxt bitdi dostum!"
+
+# antiflood
+antiflood_1: "`Antiflood ayarı bağlıdı`"
+antiflood_2: "`Bu çatda limit yoxdur.`"
+antiflood_3: "`Artıq susdurulub.`"
+antiflood_4: "`{} qrupu üçün Antiflood ayarı yeniləndiin this chat.`"
+antiflood_5: "`Flood limit bu qrup üçün: {}.`"
+
+# ascii
+ascii_1: "`Bir şəkli yanıtlayın.`"
+ascii_2: "`Şəkil hazırlanır...`"
+
+# audiotools
+audiotools_1: "Bir musiqini cə ya videonu yanıtla.."
+audiotools_2: "Yükləndi. Səsə çevirirəm"
+audiotools_3: "`Give time in format to trim`"
+audiotools_4: "`Incorrect Data`"
+audiotools_5: "`Yükləmə yenidən yoxlanılır...`"
+audiotools_6: "`Wrong trim duration`"
+audiotools_7: "Trimmed Audio From `{}` To `{}`"
+audiotools_8: "Bir videonu yanıtla..`"
+audiotools_9: "`Audio tapılmadı...`"
+audiotools_10: "`Audio videodan çıxardılır...`"
+
+# asstcmd
+asstcmd_1: "`Komandadan istifadə etmək üçün Cavab və söz ilə bu Əmri istifadə edin.`"
+asstcmd_2: "`Silmək istədiyiniz əmri mənə verin.`"
+asstcmd_3: "Uğurludur: `/{}` silindi."
+asstcmd_4: "Uğurludur : `/{}` silindi."
+asstcmd_5: "Əmr tapılmadı və ya yoxdur"
+asstcmd_6: "**Asistanın bütün əmrləri**\n\n"
+
+# autocorrect
+act_1: "AUTOCORRECT aktivdi"
+act_2: "AUTOCORRECT deaktivdir"
+
+# autopic
+autopic_1: "`Axtarmaq üçün bir şey verin...`"
+autopic_2: "Nəticə tapılmadı `{}`"
+autopic_3: "Uğurla `{}` paketi tapıldı !\nAutoPic başlanılır!"
+autopic_4: "AUTOPIC istifadə olunmur !!"
+autopic_5: "AUTOPIC dayandırıldı!"
+
+# inline
+inline_1: "[Uʟᴛʀᴏɪᴅ Sᴜᴘᴘᴏʀᴛ](t.me/UltroidSupportChat)\n\n**Kömək menusu {}.\n\nPluginlər ~ {}**"
+inline_2: "[Uʟᴛʀᴏɪᴅ Sᴜᴘᴘᴏʀᴛ](t.me/UltroidSupportChat)\n\n**Kömək menusu {}.\n\nƏlavələr ~ {}**"
+inline_3: "[Uʟᴛʀᴏɪᴅ Sᴜᴘᴘᴏʀᴛ](t.me/UltroidSupportChat)\n\n**Kömək menusu {}.\n\nƏlavələr ~ {}\n\nDᴏ **`.setdb ADDONS True`** edin sonra restart atın.**"
+inline_4: "** Bot: {}\n\nMenu\n\nPluginlər~ {}\nƏlavələr ~ {}\nBütün əmrlər~ {}**"
+inline_5: "**Menu bağlandı**"
+inline_6: "**{} üçün Səsli Çat Yardım Menyu**\n**Mümkün əmrlər:** `{}`\n\n@TeamUltroid"
+inline_7: "Do .help {} to get the list of commands."
+inline_8: "Yeniləmək üçün aşağıdakı düyməni basın!"
+inline_9: "Siz Artıq Ən Son Versiyadasınız"
+
+# tagnotif
+tagnot_1: "{} sizi {} etiketində qeyd etdi\n\n```{}```\n\n[📨 Mesaj 📨]({})"
+tagnot_2: "{} sizi {} etiketində qeyd etdi\n\n [📨 Mesqj 📨]({})"
+
+# whisper
+wspr_1: "@{} sənə gizli mesaj göndərdi.\nSən bu mesaji oxuyandan sonra sil."
+wspr_2: "Mesaj silindi"
+wspr_3: "İstifadəçi ad qeyd edin"
+wspr_4: "İstifadəçi {} tapılmadı\nYenidən axtarın"
+wspr_5: "Siz bunu edə bilməzsiniz"
+
+# afk
+afk_1: "**Artıq Afk deyiləm**\n\n `{}` dəqiqə burdq olmadım"
+afk_2: "#AFK\nAFK rejimini False-ə təyin edin.\n `{}`-dən bəri AFK idi"
+afk_3: "**I'm currently AFK.**\nLast seen `{}` ago.\n\n**Reason:** `{}`"
+afk_4: "**Mən afkyam.**\n\n`{}` vaxt əvvəl burada idim."
+afk_5: "**Afk olundu.**\n\n**Səbəb:** `{}`"
+afk_6: "**Artıq AFKyam.**"
+
+# bot
+bot_1: "Salam, mən aktivəm."
+bot_2: "Stats"
+bot_3: "Repo"
+bot_4: "Support"
+bot_5: "• `Restartlanır...`"
+alive_1: "**Ultroid Userbot aktivdir...**\n\n**{}**\n\n┏━━━━━━━━━━━━━━━━━━━━━\n┣ **Sahib** - `{}`\n┣ **Version** - `{}`\n┣ **Py-Ultroid** - `{}`\n┣ **İşləmə Vaxtı** - `{}`\n┣ **Python** - `{}`\n┣ **Telethon** - `{}`\n┣ **Branch** - `{}`\n┗━━━━━━━━━━━━━━━━━━━━━"
+log: "**Heroku** Ultroid Log.\n[Bura]({}) toxun!"
+ping: "**Pong !!** `{}ms`\n**İşləmə vaxtı** - `{}`"
+usage: "**⚙️ Dyno istifadə ⚙️**:\n\n-> **Dyno usage for** `{}`:\n  •  **{}h**  **{}m |** `[{}%]`\n-> **Dyno hours quota remaining this month**:\n  •  **{}h**  **{}m |** `[{}%]`\n\n**Total Disk Space**: `{}`\n**Used**: `{}`\n**Free**: `{}`\n\n**📊 Data Usage 📊**\n**Upload**: `{}`\n**Down**: `{}`\n\n**CPU**: `{}%`\n**RAM**: `{}%`\n**DISK**: `{}%`"
+usage_simple: "**Yaddaş istifadə**: `{}`\n**İstifadə olunmuş**: `{}`\n**Qalan*q*: `{}`\n\n**📊 İnternet trafiki📊**\n**Göndərmə**: `{}`\n**Yükləmə**: `{}`\n\n**CPU**: `{}%`\n**RAM**: `{}%`\n**DISK**: `{}%`"
+shutdown: "Özünə yaxşı bax {}.\n`Mən səni tərk edirəm. Necəki yalançı sevənlər kimi 🥲...`"
+
+# blacklist
+blk_1: "`Qarasiyahı üçün mənə söz ver..`"
+blk_2: "Uğurlu: `{}` qarasiyahıdadır."
+blk_3: "`Hansı sözü qara siyahidan siləcəm?..`"
+blk_4: "Uğurlu : `{}` qarasiyahıdan silindi."
+blk_5: "Bu qrupda olan Qarasiyahıdakı sözlər :\n\n"
+blk_6: "Qrupda qarasiyahıda söz yoxdu."
+
+# broadcast
+bd_1: "`DB əlavə olunur...`"
+bd_2: "`Bütün admin olduğun yerlər dbya əlavə olunur...`"
+bd_3: "**Uğurlu.**\nSöhbətlərin dbya əlavə olundu: {}\nYeni əlavə olunanlar: {}"
+bd_4: "Kanal əlavə olunsu!"
+bd_5: "`Database əlavə olundu!`"
+bd_6: "`Kanal onsuzda databaseyə əlavə olunub!`"
+bd_7: "Database silindi"
+bd_8: "`Silinir...`"
+bd_9: "Kanal onsuzda databasedən silinib. "
+
+# calculator
+calc_1: "• Ultroid hesablama •"
+calc_2: "Kalkulyatoru yenidən aç"
+
+# channel hacks
+cha_1: "Yanlış kanal verildi"
+cha_2: "Mənbə uğurla əlavə edildi"
+cha_3: "Mənbə kanalı artıq əlavə edildi"
+cha_4: "Mənbə verilənlər bazası təmizləndi."
+cha_5: "Mənbə verilənlər bazasından çıxarıldı"
+cha_6: "Mənbə kanalı artıq verilənlər bazasından çıxarılır"
+cha_7: "Verilənlər bazasında təyinat kanalları:"
+cha_8: "Verilənlər bazasında mənbə kanalları:"
+
+# carbon
+carbon_1: "[{}](tg://user?id={}) tərəfindən karbon edildi"
+carbon_2: "`Bir mesajı və ya faylı yanıtlayın..`"
+carbon_3: "`Karbon yaratmaq üçün xüsusi rəng verin...`"
+
+# chat_bot
+chab_1: "Bir istifadəçiyə cavab verin və ya AI Chatbot əlavə etmək üçün ID / İstifadəçi adını verin!"
+chab_2: "Heç bir istifadəçinin AI əlavə olundu."
+chab_3: "**Bu söhbətdə AI effektiv istifadəçilərinin ümumi siyahısı:\n\n**"
+
+# chats
+chats_1: "`Bu söhbəti silmək`"
+chats_2: "`Mən admin deyiləm`"
+chats_3: "#silindi\nsilindi {}"
+chats_4: "Sizin [{}]({}}) qrupu patron hazırladı!"
+chats_5: "@TeamUltroid ə qoşulun"
+chats_6: "{} qrupunuz/kanalınız patron hazırlandı!"
+
+# clean action
+clan_1: "Bu söhbət üçün təmiz hərəkət qəbulu əlavə edildi"
+clan_2: "Bu söhbət üçün təmiz hərəkət qəbulu"
+clan_3: "Yanlış id"
+clan_4: "Çat əlavə olunmur, düzgün istifadə et"
+
+# converter
+cvt_1: "Hər hansı bir mediaya/sənədə cavab verin."
+cvt_2: "Faylın adını və uzadılmasını verin"
+cvt_3: "Mediaya cavab verin .."
+cvt_4: "IMG və ya eskizlə fayla cavab verin."
+cvt_5: "Cavablandırılmış faylın eskizi yoxdur."
+cvt_6: "Xüsusi eskiziniz kimi [bu]({}) əlavə edildi"
+cvt_7: "Oxunan bir fayla cavab verin"
+cvt_8: "Oxunan bir fayl deyil."
+# eventsofday
+eod_1: "🎊 **Günün Hadisələri**\n\n"
+eod_2: "• **Günün hadisələri {}/2022**\n\n"
+
+# core
+core_1: "Module Found"
+core_2: "{}.py use .paste to paste in neko and raw.."
+core_3: "Search Again..?"
+core_4: "Module {} Found"
+core_5: "{}.py use .paste to paste in neko and raw.."
+core_6: "Module {}.py Not Found"
+core_7: "No Such Module"
+core_8: "No Module Named {}.py"
+core_9: "`Give name of plugin which u want to unload`"
+core_10: "**Uɴʟᴏᴀᴅᴇᴅ** `{}` **Sᴜᴄᴄᴇssғᴜʟʟʏ.**"
+core_11: "**Yᴏᴜ Cᴀɴ'ᴛ Uɴʟᴏᴀᴅ Oғғɪᴄɪᴀʟ Pʟᴜɢɪɴs**"
+core_12: "**Nᴏ Pʟᴜɢɪɴ Nᴀᴍᴇᴅ** `{}`"
+core_13: "`Give name of plugin which u want to uninstall`"
+core_14: "**Uɴɪɴsᴛᴀʟʟᴇᴅ** `{}` **Sᴜᴄᴄᴇssғᴜʟʟʏ.**"
+core_15: "**Yᴏᴜ Cᴀɴ'ᴛ Uɴɪɴsᴛᴀʟʟ Oғғɪᴄɪᴀʟ Pʟᴜɢɪɴs**"
+core_16: "`Give name of plugin which u want to load`"
+core_17: "**Sᴜᴄᴄᴇssғᴜʟʟʏ Lᴏᴀᴅᴇᴅ** `{}`"
+core_18: "**Could not load** `{}` **because of the following error.**\n`{}`"
+
+# devtools
+devs_1: "`Heç bir əmr verilmədi`"
+devs_2: "`Python CMD verin`"
+devs_3: "`C++ kodu verin..`"
+
+# dm
+dm_1: "Çat istifadəçi adını və ya göndəriləcəyinizi haradan göndərin.`"
+dm_2: "`MSG göndərmək və ya cavab vermək üçün mətn verin`"
+dm_3: "`⚜️Message çatdırıldı!⚜️`"
+dm_4: "Xəta : {}\nOxumaq : `{}help dm`"
+dm_5: "`Şəxsini yoxlayın.`"
+dm_6: "`Heçbir mesaj tapılmadı :(`"
+
+# echo
+echo_1: "**İstifadəçilər üçün aktivləşdirilmiş echo:**\n\n"
+
+# fake action
+fka_1: "{} Saniyəyə saxta hərəkətə başlayır."
+
+# fedutils
+sf_1: "Starting a Mass-FedBan..."
+sf_2: "`No user designated!`"
+sf_3: "You can't ban my dev you noob!!"
+sf_4: "`Seems like rose isn't responding, or, the plugin is misbehaving`"
+sf_5: "You can only use fed commands once every 5 minutes"
+sf_6: "Try again after 5 mins."
+sf_7: "Unable to collect FedAdminList. Retrying ({}/3)..."
+sf_8: "Error"
+sf_9: "Unable to collect FedAdminList."
+sf_10: "FBaning in {} feds."
+sf_11: "Specified FBan Group ID is incorrect."
+sf_12: "{} Excluded."
+sf_13: "Error in removing FedAdmin file.\n{}"
+sf_14: "SuperFBan Completed.\nTotal Feds - {}.\nExcluded - {}.\n Affected {} feds.\n#TB"
+sf_15: "Starting a Mass-UnFedBan..."
+sf_16: "SuperUnFBan Completed.\nTotal Feds - {}.\nExcluded - {}.\n Affected {} feds.\n#TB"
+sf_17: "`Give me someones id, or reply to somones message to check his/her fedstat.`"
+sf_18: "List of feds {} has been banned in.\n\nCollected using Ultroid."
+sf_19: "**Error**\n `Unblock` @MissRose_Bot `and try again!"
+sf_20: "`Extracting information...`"
+sf_21: "\n\nFedInfo Extracted by Ultroid"
+sf_22: "No user was designated."
+sf_23: "**Error**\n `Unblock` @MissRose_Bot `and try again!"
+
+# filter
+flr_1: "`Use this command word to set as filter and reply...`"
+flr_2: "Filters Found In This Chats Are\n\n"
+flr_3: "`Give the filter to remove..`"
+flr_4: "Done : Filter `{}` Saved."
+flr_5: "Done : Filter `{}` Removed."
+flr_6: "No Filters Found Here"
+
+# fontgen
+fgn_1: "**Mövcud fontlar**\n\n"
+
+# force subscribe
+fsub_1: "İstifadəçinin qoşulmasını istədiyiniz kanalı verin !"
+fsub_2: "Düzgün Kanal İstifadəçi adını və ya id-ni verin"
+fsub_3: "ForceSub çat üçün aktivdir !"
+fsub_4: "Kanala qoşul"
+fsub_5: "Səsimi aç"
+fsub_6: "Zəhmət olmasa kanala qoşulun !\nSonra düyməyə vurun !"
+fsub_7: "Bu Mesaj Sizin Üçün Deyil"
+fsub_8: "Kanala qatıldığınız üçün təşəkkürlər! "
+
+# extra
+ex_1: "`Mesajı yanıtlayın..`"
+
+# gdrive
+gdrive_1: "`You have already authorised with Google Drive`"
+gdrive_2: "Go [here](https://console.developers.google.com/flows/enableapi?apiid=drive) and get your `GDRIVE_CLIENT_ID` and `GDRIVE_CLIENT_SECRET`\n\n Send your GDRIVE_CLIENT_ID and GDRIVE_CLIENT_SECRET as this.\n`GDRIVE_CLIENT_ID GDRIVE_CLIENT_SECRET` separated by space."
+gdrive_3: "`Wrong Client Id`"
+gdrive_4: "`Something went wrong! Send `/auth` again.\nIf the same happens, contact `@TeamUltroid"
+gdrive_5: "`Success!\nYou are all set to use Google Drive with Ultroid Userbot.`"
+gdrive_6: "`Go to `{}` and send ``/auth.`"
+gdrive_7: "**Successfully uploaded the file to G-Drive :**\n\n[{}]({})"
+
+# get addons
+gas_1: "Please provide a raw link!"
+
+# greetings
+grt_1: "`Xoş gəldin mesajı yadda saxlanıldı`"
+grt_2: "Zəhmət olmasa bu əmri qrupda yoxla!"
+grt_3: "`Xoş gəldin mesajini təyin etmək istədiyiniz mesaja cavab verin`"
+grt_4: "`Xoş gəldin mesaji yoxdur!`"
+grt_5: "`Xoş gəldin qeydi yoxdur.`"
+grt_6: "`Xoş getdin mesaji yoxdur!`"
+grt_7: "`Xoş getdin mesajini təyin etmək istədiyiniz mesaja cavab verin`"
+
+# mediainfo
+mdi_1: "Ətraflı izahlı məlumat"
+
+# nightmode
+nightm_1: "Give Time in correct format"
+nightm_2: "Setted time successfully"
+nightm_3: "Done, Added Current Chat To Night Mode"
+nightm_4: "Done, Removed Current Chat from Night Mode"
+nightm_5: "Something Went Wrong"
+
+# pmpermit
+pmperm_1: "Zəhmət olmasa cavab verməyimi gözləyin, əks halda bloklanacaqsınız və spam olaraq bildiriləcəksiniz!!"
+pmperm_2: "Eyy, mən sənə spam göndərmə dedim!\nHələlik bloklanmısan və şikayət etmisən."
+pmperm_3: "Kiminsə mesajına cavab verin və ya bu əmri şəxsi olaraq sınayın."
+
+# schedule_msg
+schdl_1: "`Planlaşdırılmış mesaj uğurla edildi`."
+schdl_2: "`Format səfdi`"
+
+# searches
+srch_1: "`Mənə istifadəçi adı verin!!`"
+srch_2: "`İstifadəçini tapa bilmədim...`"
+srch_3: "`Musiqini tapa bilmədim...`"
+
+# snip
+snip_1: "Snip etmək üçün bir şeyi yanıtlayıb ad ver."
+snip_2: "Mənə silmək istədiyin sözü ver..."
+snip_3: "Snip yoxdur."
+
+# specialtools
+spcltool_1: "Musiqini və ya videonu yanıtlayın"
+spcltool_2: "`Uğurludur..İndi bu Audionu əlavə etmək istədiyiniz videoya cavab verin `"
+spcltool_3: "Videonu yanıtlayın"
+spcltool_4: "`Faylnı yanıtlayıb .raw yazın`"
+spcltool_5: "Yükləmə uğurludur, İndi musiqi və ya video əlavə et"
+spcltool_6: "`Düzgün istifadə et\nİstifadə: dd/mm/yyyy format`"
+spcltool_7: "`Ad günün mübarək🎉🎊`"
+spcltool_8: "Axtarış üçün mənə nəsə ver.."
+spcltool_9: "Heçnə yoxdur."
+
+# sudo
+sudo_1: "`Reply to a msg or add it's id/username.`"
+sudo_2: "You cant add yourself as Sudo User..."
+sudo_3: "`No SUDO User was assigned ...`"
+
+# unsplash
+unspl_1: "Məlumat tapa bilmədim !"
+
+# updater
+upd_1: "`Checking for updates...`"
+upd_2: "`Oops.. Updater cannot continue due to some problems.`\n\n**LOGTRACE:**\n"
+upd_3: "**New UPDATE available for [[{}]]({}/tree/{}):\n\nCHANGELOG**\n\n{}"
+upd_4: "`Changelog is too big, view the file to see it.`"
+upd_5: "Click the below button to update."
+upd_6: "\n`Your BOT is`  **up-to-date**  `with`  **[[{}]]({}/tree/{})**\n"
+upd_7: "`Fast Soft Updating...`"
+
+# upload download
+udl_1: "`Reply to the file/media you want to download...`"
+udl_2: "Download Successful..\nTo\n`{}`\nin `{}`"
+udl_3: "`Give a specific path to file`"
+udl_4: "`Trying to download...`"
+udl_5: "`You forgot to give link :(`"
+udl_6: "`This Directory is Empty.`"
+
+# words
+wrd_1: "• **Word :** `{}`\n• **Meaning :** __{}__\n\n• **Example :** __{}__"
+wrd_2: "**Word** - `{}`\n\n**Synonyms** - \n"
+wrd_3: "**Word** - `{}`\n\n**Antonyms** - \n"
+wrd_4: "`Give a Word to Find Its Meaning..`"
+wrd_5: "Synonyms"
+wrd_6: "Antonyms"
+wrd_7: "No synonym found!!\n\n`{}`"
+wrd_8: "No Antonyms found!!\n\n`{}`"
+
+# profanitY
+prof_1: "`Added This Chat for Profanity Filtering!`"
+prof_2: "`Removed This Chat from Profanity Filtering!`"
+
+# notes
+notes_1: "`Use this Command with Reply and word to use a note.`"
+notes_2: "Done Note : `#{}` saved."
+notes_3: "`Give me the note handler which you want to remove.`"
+notes_4: "Notes Found In This Chats Are\n\n"
+notes_5: "No Notes Found Here"
+
+# stickertools
+sts_1: "`Sən heç bir məqalə yazmamısan, Vayfu gedir.`"
+sts_2: "`Stickeri yanıtlayın...`"
+sts_3: "**Zəhmət olmasa seçin {} **"
+sts_4: "`Sən hərəkətli stickerə yanır atmadın.`"
+sts_5: "**Paketə əlavə olundu**.\n**Paket linki:** [burada]({})"
+sts_6: "`Mesaja və ya medianı yanıtla...`"
+sts_7: "`Sticker yeni paketə əlavə olundu !\nYeni paket yaradıldı!\nYeni paketin` [burada](t.me/addstickers/{})"
+sts_8: "`Paketə əlavə edə bilmədim,` @Stickers `botuna paketə Stickeri özünüz əlavə edin.`"
+sts_9: "`Ooo hərəkətli sticker👀...`"
+sts_10: "`Medianı yanıtlayın...`"
+sts_11: "Sticker paketə əlavə olunur..."
+sts_12: "`Oğurladıç!`\n`Emoji` : {}\n`Sticker Paketi` [burada](t.me/addstickers/{})"
+sts_13: "`Kifayət qədər yer olmadığından Paket {} -ə keçid`"
+
+# whichsong
+whs_1: "<• Faylı yanıtla •>"
+whs_2: "`Musiqini axtarıram....`"
+whs_3: "Musiqini tapa bilmədim :("
+whs_4: "**Musiqini tapdım!**\nBaşlıq: __{}__"
+
+# webupload
+wbl_1: "`Mənə fayl adı ver..`"
+
+# writer
+writer_1: "`Mənə mətn ver`"
+
+# webshot
+wbs_1: "`Mənə link ver!`"
+wbs_2: "Link səfdi!"
+wbs_3: "**WebShot hazırlandı**\n**URL**: {}"
+
+# youtube
+youtube_1: "Mahnı yükləmək linki düzgün verin!"
+youtube_2: "`Musiqi linkini düzgün ver`"
+youtube_3: "Youtubefən yükləmək üçün linki düzgün verin!"
+youtube_4: "`Mənə yükləmək üçün linki füzgün verin`"
+youtube_5: "Mənə axtarış üçün arqument verin!"
+youtube_6: "`Musiqi yüklənir ...`"
+youtube_7: "Mənə axtarış üçün arqument verin!"
+youtube_8: "`Video musiqi yüklənir...`"
+
+# ziptools
+zip_1: "Media və ya fayla yanıt verin."
+zip_2: "First add All Files Via `{}addzip` then doZip to zip all files at one."
+zip_3: "`Yalnız zip faylı yanıtla.`"
+
+# ------------------------- assistant --------------------------#
+
+ast_1: "Api tapa bilmədim."
+ast_2: "**remove.bg API**\nApi key əlavə et\n\n /cancel edərək prosesi dayandır."
+ast_3: "Hey {}. Zəhmət olmasa seçimləri nəzərdən keçirin"
+
+# inlinestuff
+instu_1: "App axtarma. Mənə arqument verin!"
+instu_2: "Son axtarışlar.."
+instu_3: "Axtarış üçün söz yazın"
+instu_4: "Uğurlu"
+
+# callbackstuffs
+clst_1: "'Qurma prosesi, onun tamamlanmasını gözləyin."
+clst_2: "`Güncəlləmə uğurla bitdi!\nRestartlanır, biraz gözləyin...`"
+clst_3: "■ Log hazırlanır..."
+clst_4: "Gözlənilməz xəta baş verdi..."
+clst_5: "Uğurlu!"
+
+# -------------------------- VcBot ------------------------------- #
+
+vcbot_1: "`Left the voice chat.`"
+vcbot_2: "**ERROR:**\n{}"
+vcbot_3: "• Volume Changed to `{}%` •"
+vcbot_4: "`Please specify a volume from 1 to 200!`"
+vcbot_5: "`Re-joining this voice chat.`"
+vcbot_6: "You haven't connected to a voice chat!"
+vcbot_7: "`Keep patience... It'll take some time.`"
+vcbot_8: "Give only youtube playlist"
+vcbot_9: "Are You Kidding Me?\nWhat to Play?"
+vcbot_10: "Removed Chat from Vc AUTH Groups!"
+vcbot_11: "`Getting Voice Chat Bot Users List...`"
+vcbot_12: "`Muted playback in this chat.`"
+vcbot_13: "`Resumed playback in this chat.`"
+vcbot_14: "`Paused playback in this chat.`"
+vcbot_15: "Please specify a song name or reply to a video file !"
+vcbot_16: "Chat is Not in Vc Auth list..."
+vcbot_17: "`Reply to user's msg or add it's id/username...`"
+vcbot_18: "• Vc Auth List is Empty.."
+vcbot_19: "Already Authed This Chat!"
+vcbot_20: "`Downloading and converting...`"
+vcbot_21: "• Nothing in queue!"
+vcbot_22: "`Cleaned All Queues In Chat`"
+
+help_echo: "• `{i} addecho <heç kimə cavab>`\n   Cavablandırılmış istifadəçidən Auto Echo mesajına başlayın.\n\n• `{i} remecho <heç kimə cavab>`\n   Sönmək\n\n• `{i} listecho <heç kimə cavab>`\n   Siyahı almaq."
+help_mediatools: "-\n\n• `{i} mediaNfo <media-a cavab>`\n   Bu barədə məlumat almaq.\n\n• `{i} <dərəcəli / bucaq> <media>` cavabı\n   Hər hansı bir video / foto / media dönün ..\n   Qeyd: video üçün 90-cı illik bucağı olmalıdır"
+help_mute: "-\n\n• `{i} səssiz <msg / istifadəçi id>` cavabı\n    Mövcud söhbətdə səssiz istifadəçi.\n\n• `{i} səssizcə <msg / istifadəçi id>` cavabı\n    Mövcud söhbətdə istifadəçi səssiz.\n\n• `{i} dmute <msg / istifadəçi id>` cavabı\n    MSGS silməklə cari söhbətdə səssiz istifadəçi.\n\n• `{i} undmute <msg / istifadə id>` cavabı\n    Mövcud söhbətdə səssiz bir istifadəçi.\n\n• `{i} tmute <vaxt> <msg / istifadə id>`\n    s- saniyə\n    m- dəqiqə\n    h- saat\n    günlük\n    Zamanla cari söhbətdə səssiz istifadəçi."
+fsh_1: "** Saxlanılan faylların siyahısı .:**"
+games_6: "** • 5 saniyədə viktorina başlamaq. **\n**• Səviyyə :** {}\n** • QS: ** {}"
+pinned_2: "Mövcud söhbətdə pinli mesaj [burada] ({})."
+help_pmpermit: "-\n\n• `{i} a` və ya` {i} təsdiq etmək\n    Baş nazirə kimisə təsdiqləyin.\n\n• `{i} da` {i {i {i} rədd edirəm\n    PM-yə kimisə rədd et.\n\n• '{i} blok'\n    Kimisə bloklayın.\n\n• `{i} mane ol`{i} hamısını açın\n    Birini açın.\n\n• `{i} nologpm`\n    İstifadəçidən mesajları saxlamağı dayandırın.\n\n• `{i} logpm`\n    İstifadəçidən mesajları daxil etməyə başlayın.\n\n• `{i} startchive``\n    Arxiv Yeni PMS.\n\n• {i} stoparchive``\n    Yeni PMS arxivləşdirməyin.\n\n• '{i} clearchive'\n    Bütün söhbətləri sarsıdan.\n\n• `{i} linvede`\n   Bütün təsdiq edilmiş PMSləri sadalayın."
+help_snips: "-\n\n• `{i} əlavə edir <Word> <bir mesaja cavab>`\n    Cavab verilmiş mesajla əlaqəli snayp kimi istifadə olunan sözü əlavə edin.\n\n• `{i} remsnip <word>`\n    Snayp sözünü çıxarın ..\n\n• `{i} listnip`nip`\n    Bütün parçaları sadalayın.\n\n• İstifadəsi:\n    '$ (ur snayp söz) yazın' cavabı alın."
+com_7: "`Bir şey səhv oldu. '"
+pmbot_2: "Xahiş edirəm onu qadağan etmək üçün kiməsə cavab verin."
+fsh_2: "** Fayl saxlanılıb! **\n\n** Səhifəli link: ** {}"
+help_12: "Səsli söhbət botu aktiv deyil!İstifadə etmək üçün .setdb vcbot istifadə edin!"
+help_fileshare: "-\n\n• `{i} saxlayır <Cavab_to_message>`\n   Cavablı mesaj / medianı saxlayın və köməkçi bot vasitəsilə daxil olmaq üçün həmin fayla paylaşılan bir əlaqə yaradın!\n\n• `{i} delstored <saxlanılan faylın bağlantısı>`\n    Saxlanılan faylı silin.\n\n• `{i} listortore`\n   Bütün saxlanılan mesajları əldə edin.\n\n• İnline saxlanılan faylları görmək üçün 'Filestore' ilə köməkçi botunuzla inline gedin."
+help_fedutils: "-\n\n• `{i} superfan <İstifadəçi / İstifadəçi / İstifadəçi adı>`\n    Admin olduğunuz bütün bəslənən bütün fedlər arasında fban.\n\n• `{i} superunfban <İstifadəçi / İstifadəçi / İstifadəçi adı>`\n    Qeyri-rəsmi olaraq, admin olduğunuz bütün bəslənən şəxs.\n\nFbane qrupunu və köməkçisini istisna etmək üçün bəsləyir.\n\n• `{i} fstat <istifadəçi adı / id / İstifadəçi>`\n    Güldəki şəxsin bəslənən statını toplayın.\n\n• `{i} fedinfo <(fedid)>`\n    Verilmiş Fed ID və ya Güldən olan Fed-dən Federasiya məlumatlarını toplayın."
+help_other: "-\n\n• `{i} <İstifadəçi adı / ID> ID> <Cavab / Tip>` göndər\n    İstifadəçi / söhbətə mesaj göndərin.\n\n• `{i} fwdreply <msg>` cavab\n    Şəxsi olaraq göndərərək kiminsə msg-ə cavab verin.\n\n• `{i} pulsuz <cavab mesajı>`\n    MSG-ni Saxlanılan mesaj qutusuna cavablandırın.\n\n• `{i} fsave <cavab mesajı>`\n    MSG-ni ur xilas mesajlarına cavablandıran irəli."
+help_13: "Rəsmi addons yükləmək üçün '{} setdb addons"
+help_warn: "• `{i} xəbərdarlıq edir <İstifadəçi> <səbəb>`\n    Xəbərdarlıq verir.\n\n• {i} resetwarn <istifadəçi> `cavabı\n    Bütün xəbərdarlıqları yenidən qurmaq.\n\n• `{i} xəbərdarlıq edir <İstifadəçi>`\n   Bir istifadəçinin xəbərdarlıqlarını almaq üçün.\n\n• `{i} setwarn <warn say> |<Ban / Sut / Kick> `\n   Xəbərdarlıqlar üçün xəbərdarlıq sayını təyin edin\n   Qoyulduqdan sonra '|'Marka qadağan / səssiz / vuruş kimi hərəkət etdi\n   Onun standart 3 vuruşu\n   Misal: `Setwarn 5 |lal"
+help_blacklist: "-\n\n• `{i} blacklist <söz / boşluq olan bütün sözlər>`\n    qara siyahı bu söhbətdə seçilmiş söz.\n\n• `{i} remblacklist <söz>`\n    Qara siyahıdan sözü çıxarın ..\n\n• {i} listblacklist`\n    Bütün qara siyahıya alınmış sözləri sadalayın.\n\n  'Bir insanın qara siyahıdan istifadə etdiyi bir söz istifadə edərsə, onun MSG silinəcək'\n  'Və u bu söhbətdə admin olmalıdır'"
+vct_1: "`Səsli söhbət başladı ...`"
+help_utilities: "-\n\n• `{i} kicme`: qrupu tərk edir.\n\n• `{i} tarix`: Calender şou.\n\n• {i} listreserved`\n    Sahib olduğunuz bütün istifadəçi adları (kanallar / qruplar) sadalayın.\n\n• `{i} stats ': Profil statistikalarına baxın.\n\n• `{i} paste` -` Uzun mətn / mətn sənədinə cavab daxil edin. '\n\n• `{i} məlumat <istifadəçi adı / istifadəçi / istifadəçi / johid>`\n    Kiminsə msg-ə cavab ver.\n\n• `{i} dəvət etmək <istifadəçi adı / istifadəçi>`\n    İstifadəçiyə söhbətə əlavə edin.\n\n• `{i} rmbg <pic>` cavabı\n    Bu şəkildəki fonu çıxarın.\n\n• `{i} teleqraf <mediaya cavab verin / mətn>`\n    Telegraph-a media / mətn yükləyin.\n\n• `{i} json <msg>` cavabı\n    Mesajın json kodlandını əldə edin.\n\n• `{i} təklif etməyi təklif edin və ya <anketin adı>`\n    Cavablı təklif üçün bəli / yox, sorğu yaradın.\n\n• `{i} iPinfo <iPaddress>`: Bu IP ünvanı haqqında məlumat əldə edin.\n\n• `{i} cpy <mesaja cavab>`\n   Cavablı mesajı formatlama ilə kopyalayın. 24 saat sonra bitəcək.\n• `{i} pst`\n   Kopyalanan mesajı formatlamaqla yapışdırın.\n\n• `{i} baş barmaq <cavab faylı>`: Cavablı faylın eskizini yükləyin.\n\n• `{i} getmsg <mesaj bağlantısı>`\n  Faydan / kopyalama məhdudiyyətləri olan söhbətlərdən mesajlar alın."
+help_bot: "• `{i} dirie | |`{i} canlı inline`\n    Botunuzun işlədiyini yoxlayın.\n\n• `{i} ping`\n    Ultroidin cavab müddətini yoxlayın.\n\n• `{i} yeniləmə\n    Hər hansı bir yeniləmə varsa, dəyişdiricilərə baxın.\n\n• `{i} cmds``\n    Bütün plugin adlarına baxın.\n\n• `{i} yenidən başladın\n    Botunuzu yenidən başlatmaq üçün.\n\n• `{i} qeydlər (sys) '\n    Tam terminal qeydlərini əldə edin.\n• `{i} karbon qeyd edir\n    Karbonlaşdırılmış Sys qeydlərini alın.\n• '{i} Heroku'u qeyd edir\n   Heroku qeydlərinin ən son 100 sətirini əldə edin.\n\n• `{i} bağlama '\n    Botunuzu söndürün."
+help_sudo: "-\n\n• `{i} addsudo``\n    İstifadəçi və ya <Space> Ayrılmış istifadəçi (lər) istifadə edərək sudo istifadəçiləri əlavə edin\n\n• `{i} delsudo``\n    Sudo istifadəçilərini istifadəçiyə cavab vermək və ya <Space> ayrılmış istifadəçi (lər) istifadə edərək sudo istifadəçilərini çıxarın\n\n• `{i} listsudo``\n    Bütün sudo istifadəçilərini sadalayın."
+help_fontgen: "• `{i} şrift <font adı>: <mətn>`\n    Mətn üçün fərqli şriftlər yaradın.\n\n• `{i} font`\n    Şriftlərin siyahısını almaq üçün"
+help_usage: "• `{i} istifadə '\n    Ümumi istifadə edin.\n\n• {i} istifadə heroku`\n   Heroku statistikasını əldə edin.\n\n• `{i} istifadə db`\n   Verilənlər bazası anbar istifadəsini əldə edin."
+help_schedulemsg: "-\n\n• `{i} cədvəli <Mətn / MSG> <Time>` -ə cavab verin\n    Vaxtında ikinci və ya 1h və ya 1m kimi ikinci istifadə edə bilərsiniz\n    məsələn.Salam 100 'Cədvəli 100-də 100 sandan sonra MSG çatdırır.\n    məsələn.Salam 1h 'Cədvəli 1H' bir saatdan sonra msg çatdırır."
+vct_5: "`Dəvət olunmuş {} istifadəçilər"
+help_downloadupload: "-\n\n• `{i} ul <yol / to / / fayl>`\n    Telegram-da faylları yükləyin.\n    Tələbata görə fayl adından əvvəl və ya sonra aşağıdakı arqumentlərdən istifadə edin:\n      '- FREAM`' axını yükləmək.\n      Yükləndikdən sonra faylı silmək üçün `--delete`\n      `- thumb` thumbnail olmadan yükləmək.\n\n• `{i} dl <fayl adı (isteğe bağlı)>`\n    Yükləmək üçün faylı cavablandırın.\n\n• `{i} yükləyin <ddl> (| fayl adı)`\n    DDL istifadə edərək yükləyin.Verilməsə, autogenerate fayl adı olacaq."
+help_variables: "-\n\n• `{i} var <dəyişən ad>` almaq\n   Verilmiş dəyişən adın dəyərini əldə edin.\n\n• `{i} tipi <dəyişən ad>` almaq\n   Dəyişən növ alın.\n\n• `{i} db <key>` almaq\n   Verilmiş açarın DB dəyəri alın.\n\n• `{i} Keys almaq '\n   Bütün redis düymələrini əldə edin."
+help_antiflood: "-\n\n• `{i} setflood <tameger>`\n    Daşqın həddi bir söhbətə qoyun.\n\n• `{i} remflood`\n    Daşqın həddini bir söhbətdən çıxarın.\n\n• '{i} getflood``\n    Bir söhbətin sel həddi alın."
+help_tools: "-\n\n• `{i} dairə\n    Video qeyd almaq üçün bir audio mahnı və ya GIF-ə cavab verin.\n\n• `{i} ls`\n    Bir qovluq içərisindəki bütün faylları əldə edin.\n\n• `{i} bots``\n    Cari söhbətdəki botların sayını perma-link ilə göstərir.\n\n• `{i} hl <a link> <mətn-isteğe bağlı>`\n    Linki mesaj olaraq bir boşluqla təchiz edir.\n\n• `{i} id`\n    Şəxsiyyət vəsiqəsini almaq üçün bir etiketə cavab verin\n    Şəxsiyyət vəsiqəsini almaq üçün bir istifadəçiyə cavab verin\n    Cavab vermədən söhbətin şəxsiyyət vəsiqəsini alacaqsınız\n\n• `{i} sg <bir istifadəçi> <istifadəçi adı / id>`\n    Cavablı istifadəçinin adı tarixini əldə edin.\n\n• `{i} tr <dest lang kodu> <(cavab verin) mesaj>`\n    Tərcümə mesajı alın.\n\n• `{i} webshot <url>`\n    Veb səhifənin ekran görüntüsü alın.\n\n• `{i} Shorturl <url> <id-isteğe bağlı>`\n    Hər hansı bir URL qısaldın ..."
+help_webupload: "-\n\n• `{i} webupload`\n    Faylları başqa bir serverə yükləyin."
+help_profanityfilter: "-\n\n• `{i} addprofanity`\n   Kimsə bir söhbətdə pis söz göndərsə, bot bu mesajı silir.\n\n• `{i} remprofanity`\n   Murdarlıq siyahısından söhbətdən."
+cmda: "✘ əmrlər mövcuddur"
+games_5: "Vaxt intervalını seçin ..."
+games_3: "Çətinlik səviyyəsini seçin"
+help_imagetools: "-\n\n• `{i} sərhəd <Foto / etiketə cavab>`\n    O media ətrafında sərhəd yaratmaq ..\n    Ex - `{i} sərhəd 12,22,23 '\n       - `{i} sərhəd 12,22,23; eni (sayda) `\n\n• `{i} boz <istənilən mediaya cavab verin>`\n    Qara nd ağ etmək.\n\n• `{i} Rəng <hər hansı bir qara nd ağ mediaya cavab verin>`\n    Onu rəngarəng etmək üçün.\n\n• `{i} toon <istənilən mediaya cavab>`\n    Onu etmək üçün.\n\n• `{i} təhlükə <istənilən mediaya cavab>`\n    Təhlükə etmək üçün.\n\n• `{i} mənfi <istənilən mediaya cavab>`\n    Mənfi görüntü etmək.\n\n• `{i} blur <hər hansı bir mediaya cavab>`\n    Bulanık etmək.\n\n• `{i} quad <hər hansı bir mediaya cavab ver\n    bir vorteks yaradın.\n\n• `{i} güzgü <istənilən mediaya cavab>`\n    Güzgü şəkli yaratmaq.\n\n• `{i} çevirmək <hər hansı bir mediaya cavab>`\n    Çevirmək.\n\n• '{i} eskiz <hər hansı bir mediaya cavab> `\n    Eskizini çəkmək üçün.\n\n• `{i} mavi <hər hansı bir mediaya cavab verin>`\n    Sadəcə sərin.\n\n• `{i} csample <rəng adı / rəng kodu>`\n   Misal: `{i} csample red`\n             `{i} csample # ffffff`\n\n• `{i} pikselator <cavab image>`\n    Bir pikselli bir görüntü yaradın .."
+help_instagram: "-\n\n• `{i} instadl <instagram url>`\n  `Instagram Media ...`\n\n• `{i} instadata <istifadəçi adı>`\n  'Birinin və ya özünün instagram məlumatlarını əldə edin\n\n• `{i} instaul <cavab video / foto> <başlama>`\n  İnstagram-a media yükləyin ... `\n\n• `{i} igtv <cavab video> <başlıq>`\n  `İgtv üçün medianı yükləyin ... '\n\n• `{i} makaron <cavab video> <başlıq>`\n  İnstagram makaralarına media yükləyin ... `\n\n• Sorğu `Instatm` ilə köməkçinizlə inline gedin\n   Ana səhifənin yazılarını almaq üçün ...\n\n• `Insta_username` və` Insta_password` doldurun\n  istifadə etməzdən əvvəl .."
+help_fakeaction: "-\n\n• `{i} ftyping <vaxt / saniyə>`\n    `Cari chat-də saxta yazın. '\n\n• {i} fugio <vaxt / saniyə> `\n    `Cari chat-də saxta qeyd aksiyasını göstərir. '\n\n• `{i} fvideo <vaxt / saniyə>`\n    `Cari chat-də saxta video hərəkəti göstərin. '\n\n• `{i} fgame <vaxt / saniyə>`\n    Cari chat-də saxta oyun oynayan saxta oyunu göstərin. '\n\n• `{i} fsticker <vaxt / saniyə>`\n    `Cari söhbətdə hərəkət edən saxta etiketi göstərin. '\n\n• `{i} slokasiyası <vaxt / saniyə>`\n    `Cari chat-də saxta yer hərəkətini göstərin. '\n\n• `{i} fcontact <vaxt / saniyə>`\n    `Cari chat-də saxta əlaqə seçən hərəkətləri göstərin. '\n\n• {i} throdan <vaxt / saniyə> `\n    Cari chat-də saxta video mesajı göstərin.\n\n• `{i} fphoto <vaxt / saniyə>`\n    Cari chat-də saxta göndərmə şəklini göstərin. '\n\n• `{i} fdocument <vaxt / saniyə>`\n    Cari chat-də saxta göndərmə sənədini göstərin."
+help_converter: "-\n\n• `{i} çevirmək <gif / img / stiker / webm>`\n    Onu GIF / Image / Webm / Normal Etiketə çevirmək üçün mediaya cavab verin.\n\n• `{i} doc <filename.ext>`\n    Bir faylda saxlamaq üçün bir mətn mesajına cavab verin.\n\n• `{i} açmaq`\n    Mətnin aşkarlanması üçün bir fayla cavab verin.\n\n• `{i} adının dəyişdirilməsi <fayl adını uzatma>`\n    Faylın adını dəyişdirmək\n\n• `{i} thumbnail <Image / thumbnail faylına cavab verin>`\n    Faylınızı xüsusi eskizinizlə yükləyin."
+help_autoban: "• `{i} autokick <on / off>`\n    aktivləşdirmək üçün.\n    off - aradan qaldırmaq.\n    Qrupdan yeni qoşulmuş istifadəçiləri avtomatik olaraq vurur.\n\n• `{i} cban '\n    Autobanning istifadə edərək istifadə olunan söhbətdə kanal olaraq göndərin.\n\n• `{i} əlavl <istifadəçi adı>`\n   Kanal kanalına kanal əlavə edin.\n\n• `{i} remwl <istifadəçi adı>`\n   Kanal kanalını kanaldan çıxarın.\n\n• `{i} listwl`: Bütün Whitelist kanalları sadalayın."
+help_button: "-\n\n• `{i} düyməsinə <düymə formatı ilə mətn\n   UN düyməsini yaradın, həmçinin pic-ə cavab verə bilər\n\nFormat: - '{i} düyməsini heyət!@Useultroid 😎.\n[Ultroid |T.ME/TELEDREUMEMEMPPORTPORT |T.Me/ultroidsupportchat |eyni]\n[Teamultroid |t.me/teamultroid] `"
+help_videotools: "-\n\n• `{i} nümunə <saniyə ərzində>`\n   Video qısa nümunəsi yaradır ..\n\n• `{i} vshots <shots sayı>`\n   Videonun ekran görüntüsünü yaradır ..\n\n• `{i} vtrim <başlama vaxtı> - <son vaxt> saniyə\n    Uzun bir video əkin .."
+help_words: "-\n\n• `{i} mənasını verir <söz>`\n    Sözün mənasını əldə edin.\n\n• `{i} sinonimi <söz>`\n    Bütün sinonimləri əldə edin.\n\n• `{i} antonym <söz>`\n    Bütün antonimləri əldə edin.\n\n• `{i} ud <word>`\n    Urbandeltiony-dən söz çatışmazlığı."
+help_core: "-\n\n• `{i} quraşdırmaq <plugin>` cavabı\n    Plugin quraşdırmaq üçün,\n  `{i} flown f`\n    Quraşdırmağa məcbur etmək.\n\n• `{i} silmək <plugin adı>`\n    Plugin boşaltmaq və çıxarmaq.\n\n• `{i} yük <plugin adı>`\n    Yüklənməmiş qeyri-rəsmi plugin yükləmək.\n\n• `{i} boşaltma <plugin adı>`\n    Qeyri-rəsmi plugin boşaltmaq üçün.\n\n• `{i} kömək <plugin adı>` kömək edir\n    Hər plugin üçün bir kömək menyusunu (bu kimi) göstərir.\n\n• `{i} getaddons <kod üçün xam link>`\n    Verilmiş xam linkdən pluginləri yükləyin."
+help_globaltools: "-\n\n• `{i} gban <cavab istifadəçi / istifadəçi adı>`\n• `{i} ungban``\n    Qlobal miqyasda qadağa / unban.\n\n• `{i} gstat <İstifadəçi / İstifadəçi / İstifadəçi adı>`\n   İstifadəçinin gbanil olub olmadığını yoxlayın.\n\n• `{i} ListGban``: Bütün GBANNED istifadəçilərini sadalayın.\n\n• `{i} gmute` | `{i} ungmute '<cavab istifadəçi / istifadəçi adı>\n    Qlobal miqyasda səssiz / səssiz.\n\n• `{i} gkick <Cavab / istifadəçi adı>` `qlobal miqyaslı istifadəçi\n• `{i} gast <mətn / cavab>` `qlobal miqyasda bütün GRPS-də msg göndərin\n\n• `{i} gaminccast <mətn / cavab>` `qlobal olaraq admin söhbətlərinizdə\n• `{i} Gucast <Mətn / Cavab>` `` Dünyada bütün PM istifadəçilərində msg göndərin\n\n• `{i} gblacklist <söhbət id / istifadəçi adı / heç bir şey (cari söhbət üçün)\n   Qara siyahıya sohbet əlavə edin və qlobal yayıma məhəl qoymur.\n• `{i} ungblacklist` 'söhbəti qara siyahıdan çıxarın.\n\n• `{i} gpromote <İstifadəçi> <kanal / qrup / hər şey> <sırt>`\n    Qlobal olaraq istifadəçini admin olduğunuz yerdə təbliğ edin\n    - Yalnız qruplarda / kanalda / kanalda təşviq edib-etməyəcəyinizi təyin edin.\n    EG- `GPROMOTE GROUP BOSS` ~ istifadəçini bütün GRPS-də təbliğ edir.\n        `GPROMOTE @Username bütün SAR` ~ istifadəçini bütün qrup və kanalda tanıtmaq\n• `{i} gdemote` - 'istifadəçi qlobal olaraq azaltmaq"
+games_4: "Sualların sayını seçin .."
+help_filter: "-\n\n• `{i} Addfilter <Word> <bir mesaja cavab>`\n    Cavab verilmiş mesajla əlaqəli filtr kimi istifadə olunan sözü əlavə edin.\n\n• `{i} remfilter <word>`\n    Süzülmüş istifadəçini çıxarın ..\n\n• `{i} listfilter`\n    Bütün filtrləri sadalayın."
+fsh_4: "** Heç bir fayl saxlanılmadı! **"
+help_afk: "-\n\n• `{i} afk <isteğe səbəb>`\n    AFK klaviaturadan uzaqdır,\n    Bundan sonra aktivləşdirildikdən sonra kimsə etiketləri və ya mesajları varsa, o, botdan avtomatlaşdırılmış cavab alacaq.\n\n    (Qeyd: AFK mesajlarında AFK mesajlarında bir media faylını `{i} afk <səbəb>`) ilə cavablandıraraq göndərin."
+help_broadcast: "• {i} Addch <id / siyahıya cavab / yox> `\n    Verilənlər bazasına söhbət əlavə edin.Heç bir şəxsiyyət vəsiqəsi göstərildiyi təqdirdə cari chat əlavə edir.\n\n• `{i} remch <bütün / id / heç biri>`\n    Göstərilən chat (cari chat verilmirsə) və ya bütün söhbətləri silir.\n\n• `{i} yayım <msg>` cavabı\n    Cavablı mesajı verilənlər bazasındakı bütün söhbətlərə göndərin.\n\n• `{i} irəli <msg>` cavabı\n     Mesajı verilənlər bazasındakı bütün söhbətlərə göndərin.\n\n• `{i} listchannels`\n    Əlavə edilmiş söhbətlərin siyahısını almaq üçün."
+help_resize: "-\n\n• `{i} ölçüsü <mediaya cavab ver\n   Ölçüsü almaq.\n\n• 'Sayı> <nömrə>' ölçüsünü dəyişdirmək `{i}\n   X, Y oxundakı görüntünü ölçmək.\n   məsələn.`{i} 690 960 qalır"
+help_giftools: "• {i} invergif`\n  GIF tərsini çevirin (mənfi).\n\n• `{i} bwgif`\n  Gif qara və ağ etmək\n\n• `{i} rvgif`\n  Gifləşmək\n\n• `{i} vtog`\n  Videoya cavab verin, bu GIF yaradacaq\n  Gif üçün video\n\n• `{i} gif <query>`\n   Sorğu ilə əlaqədar video göndərin."
+pmbot_6: "İstifadəçi heç vaxt qadağan deyildi!"
+help_vctools: "-\n\n• `{i} startvc``\n    Bir qrupda qrup zənginə başlayın.\n\n• `{i} stopvc`\n    Bir qrupda qrup zəngini dayandırın.\n\n• `{i} vaktitle <başlıq>`\n    Başlıq qrupu çağırışını dəyişdirin.\n\n• {i} vcinvite`\n    Qrup çağırışında qrupun bütün üzvlərini dəvət edin.\n    (Qoşulmalısınız)"
+vct_4: "Səsli söhbət dayandırıldı ... '"
+help_extra: "-\n\n• `{i} del <mesaja cavab>`\n    Cavab vermiş mesajı silin.\n\n• `{i} redaktə etmək <yeni mesaj>`\n    Son mesajınızı düzəldin və ya cavab verdi.\n\n• `{i} kopyalama <mesaja cavab>`\n    Cavablı mesaj / media surəti.\n\n• `{i} Cavab ver\n    Son göndərilən mesajı cavablandıran istifadəçiyə cavab verin."
+vct_6: "Giriş tapılmadı!"
+help_audiotools: "✘ əmrlər mövcuddur -\n`.makeVoice <audio-a cavab>`\n   Səsdən səsli qeyd yaradır.\n\n`.atrim <zamandan - <time>`\n   Müəyyən bir müddətə uyğun səs.\n   Zaman saniyədə olmalıdır.`.atrim 50-70`\n\n`.extractaudio <mediaya cavab verin>`\n   Səsdən çıxartmaq."
+help_chatbot: "-\n\n• `{i} Addai <İstifadəçi / İstifadəçi adı / İstifadəçi adını verin /`\n   Həmin istifadəçiyə cavab vermək üçün AI Chatbot əlavə edin.\n\n• `{i} remai <İstifadəçi / İstifadəçi adı / İstifadəçi adını verin>`\n   AI Chatbot'u çıxarın.\n\n• `{i} repai <İstifadəçi üçün cavab verin / mesaj verin>`\n   Bir AI tərəfindən bir mesajla istifadəçiyə cavab verin.\n\n• `{i} listai``\n   Hal-hazırda AI əlavə istifadəçiləri sadalayın."
+help_ziptools: "• `{i} zip <faylına cavab>`\n    Cavablı faylı zip\n    Zip-də şifrə təyin etmək üçün: `{i} zip <şifrə>` Fayllı cavab verin\n\n• `{i} açmaq <zip faylına cavab>`\n    cavab vermiş faylı açın.\n\n• `{i} AZIP <Fayla cavab>`\n   Doldurma üçün top toplamaq üçün fayl əlavə edin\n\n• `{i} dozip`\n   `{i} azip 'dən əlavə edilmiş sənədləri yükləyin\n   Şifrə təyin etmək üçün: `{i} dozip <şifrə>`"
+help_devtools: "-\n\n• `{i} bash <cmds>`\n• `{i} bash -c <cmds>` karbon şəkli əmr çıxışı kimi.\n    Teleqramdakı Linux əmrlərini işə salın.\n\n• `{i} qiymətləndirir <kod>`\n    Teleqramda Python əmrlərini qiymətləndirin.\n    Qısa yollar:\n        müştəri = bot = hadisə.client\n        e = hadisə\n        p = çap\n        Cavab = AVAIT hadisəsi.\n        chat = hadisə.chat_id\n\n• `{i} cpp <kodu>`\n    Teleqramdan C ++ kodu Run.\n\n• `{i} sysinfo```\n    Sistem məlumatlarını göstərir."
+pmbot_4: "'Yaxşı!Sizə qadağan olundu. '\n** Göndərdiyiniz əlavə mesajlar göndərilməyəcəkdir. **"
+help_beautify: "-\n\n• `{i} karbon <mətn / MSG / cavaba cavab verin /`\n    Mətni standart parametrlərlə karbonise.\n\n• `{i} rcarbon <mətn / MSG / SƏHİFƏ Cavabına cavab>`\n    Mətni karbonise, təsadüfi bg rəngləri ilə.\n\n• `{i} ccarbon <color> <mətn / MSG / SƏHİFƏ Cavab>`\n    Mətni karbonise, xüsusi BG rəngləri ilə.\n\n• `{i} rayso <opt-theme> <text> / <mesaja cavab>`\n  `{i} rayso siyahısı '-' mövzuların siyahısı alın. '"
+help_chats: "-\n\n• `{i} delchat <isteğe bağlı - istifadəçi adı / id>`\n    Bu CMD-də istifadə olunan qrupu silin.\n\n• '{i} getlink`\n• `{i} getLink r` - 'admin təsdiqlənməsi ilə əlaqə yaratmaq\n• `{i} getLink r title_ - 'link titulu ilə idarəetmə\n• `{i} getLink 10` - yeni linkdə istifadə limiti\n    Bu CMD-də istifadə olunan qrupun bağlantısını əldə edin.\n\n• `{i} yaratmaq (g | b | c) <group_name>;<İsteğe-istifadəçi adı> `\n    Qrupu yaradın Xüsusi bir ad.\n    g - megagroup / supergroup\n    b - kiçik qrup\n    c - kanal\n\n• `{i} setgpic <Foto> <chat istifadəçi adı>`\n    Qrupun profil şəklini təyin edin.\n\n• `{i} delgpic <chat istifadəçi adı -optional>`\n    Qrupun profil şəklini silin.\n\n• '{i} Unaball`\n    ANBAN Bütün üzvləri.\n\n• `{i} rmusers`\n    İstifadəçiləri xüsusi olaraq çıxarın."
+fsh_3: "Səhifələr etmək üçün bir mesaja cavab verin! '"
+help_channelhacks: "🔹 `{i} Shift <kanaldan <|<kanal> `\n     Bu, bütün köhnə yazını A kanalından B kanalına köçürəcəkdir.\n      (U istifadəçi adı və ya kanaldan istifadə edə bilərsiniz)\n      Misal: `{i} @abc sürüşür |@ xyz`\n      [Qeyd - bu ('' 'işarəsi nessesary)\n\nHər hansı bir mənbə kanalından hər hansı bir mənbə kanalından bütün yeni mesajı avtomatik göndərmə / göndərmək üçün.\n\n   `{i} Asource <kanal istifadəçi adı və ya id>`\n      Bu verilənlər bazası üçün mənbə kanalı əlavə edin\n   `{i} dsource <kanal istifadəçi adı və ya id>`\n      Bu, verilənlər bazasından qaynaq kanallarını çıxarın\n   `{i} Listource <kanal istifadəçi adı və ya id>`\n      Mənbə kanallarının siyahısını göstər\n\n\n   `{i} adest <kanal istifadəçi adı və ya id>`\n      Bu, verilənlər bazasına ur kanalları əlavə edin\n   `{i} ddest <kanal istifadəçi adı və ya id>`\n      Bu, ur kanallarını verilənlər bazasından çıxarın\n   `{i} listdest <kanal istifadəçi adı və ya id>`\n      Ur kanallarının siyahısını göstər\n\n   'Verilənlər bazasında bir çox kanal qura bilərsiniz'\n   'Auto-Post istifadə etmək üçün' {i} Setdb AutoPost Doğru ''"
+help_asstcmd: "-\n\n• `{i} addcmd <yeni cmd> <cavab>`\n   Bu cavab mesajı ilə köməkçi bot üçün yeni CMD təyin edəcəkdir.\n\n• `{i} remcmd <cmd ad>`\n   Bu CMD-ni çıxaracaq.\n\n• {i} listcmd`\n   Bütün xüsusi CMD siyahısının siyahısını əldə etmək."
+help_search: "-\n\n• `{i} saavn <axtarış sorğusu>`\n    Saavn mahnılarını yükləyin.\n\n• `{i} Google <query>`\n    Google Axtarışı üçün.\n\n• `{i} github <istifadəçi adı>`\n    İstifadəçilərin Github profilinin tam məlumat alın.\n\n• `{i} img <query>`\n  `{i} img <query>;<Nəticə sayı>\n    Görüntü axtarışları üçün axtarış üçün.\n\n• '{i} tərs'\n    Sousunu tapmaq üçün bir görüntü və ya etiketə cavab verin."
+help_calculator: "-\n\n• `{i} kalkulyator - inline kalkulyator"
+clan_5: "Bu söhbətdə təmiz hərəkətlər artıq aktivdir."
+pmbot_7: "'Təbrik edirəm!Siz unbanded. ''"
+help_notes: "-\n\n• `{i} addnote <word> <bir mesaja cavab>`\n    Cavablı mesaj və seçilmiş sözlə istifadə olunan söhbətdə qeyd əlavə edin.\n\n• `{i} remnote <word>`\n    Notu istifadə olunan söhbətdən çıxarın.\n\n• `{i} listnote`\n    Bütün qeydləri sadalayın.\n\n• İstifadəsi:\n   Qrupda qeydlər qoyun ki, hamısı istifadə edə bilər.\n   '# (qeydin açar sözü)' almaq üçün) '"
+vct_3: "`Üzvləri səsli söhbətə dəvət edir ... '"
+pmbot_1: "** Ustadımla söhbət etmək üçün aşağıdakı chat (s) -ə qoşulmalısınız!\n\n**"
+help_qrcode: "-\n\n• `{i} qrcode <mətn / mətnə cavab>`\n   `Mətnin qrcode edir\n\n• {i} addqr <cavab şəkil> <text> `\n   `QR mətnini düzəldin və görüntüyə əlavə edin. '\n\n• `{i} qrdecode <qrcode cavabı>`\n   QRCODE-ni deşifr edir. '"
+games_2: "Kateqoriya seçin!"
+games_1: "Oyunu seçin 🎮"
+help_tag: "-\n\n• `{i} tagall`\n    TAP 100 Söhbəti üzvü.\n\n• `{i} tagadmins``\n    Bu söhbətin etiketi.\n\n• `{i} Tagowner`\n    Bu söhbətin etiket sahibi\n\n• `{i} tagbots``\n    Bu söhbətin etiketli botları.\n\n• `{i} tagrec`\n    Bu yaxınlarda aktiv üzvlər etiketi.\n\n• `{i} tagon`\n    Onlayn üzvləri etiketli üzvlər (yalnız gizlilik olduqda işləyir).\n\n• `{i} tagoff`\n    Etiket Offline üzvləri (yalnız gizlilik varsa işləyin)."
+help_greetings: "-\n\n---- alqışlayır ----\n• `{i} Setwaydous * mesaj / mesaja cavab>`\n    Mövcud söhbətdə xoş mesaj seçin.\n\n• `{i} Clearwelwelwely`\n    Mövcud söhbətdə xoş gəlmisiniz.\n\n• `{i} getwelcome`\n    Mövcud söhbətdə xoş mesaj alın.\n\n---- Xeyirxələr ----\n• `{i} setgoodbye <mesaj / mesaja cavab>`\n    Mövcud söhbətdə vidalaşma mesajı seçin.\n\n• '{i} cleargoodbye``\n    Mövcud söhbətdə vidalaşağı silmək.\n\n• `{i} getgoodbye``\n    Mövcud söhbətdə videokabin mesajı alın.\n\n• `{i} -də təşəkkür edirəm / off``\n    Qruplarınızda 100 * X sayəsində bir üzvü vuraraq təşəkkür edirəm Etiket göndərin."
+help_stickertools: "-\n\n• `{i} məhv <cizgi stikerinə cavab>`\n    Etiketi məhv etmək.\n\n• `{i} kiçik <mediaya cavab>`\n    Kiçik etiketlər yaratmaq.\n\n• `{i} kang <Image / Etiketə cavab>`\n    Kang Etiket (paketinizə əlavə edin).\n\n• `{i} paketkang <paket adı>`\n    Kang tam etiket dəsti (xüsusi adı ilə).\n\n• `{i} dəyirmi <hər hansı bir mediaya cavab>`\n    Dəyirmi etiket çıxarmaq."
+help_locks: "-\n\n• `{i} kilid <msgs / media / stiker / gif / oyun / anketlər / Dəvətlər / Dəvət / Pin / ChangeInfo>`\n    İstifadə olunmuş qrupda istifadə olunan qəbulu kilidləyin.\n\n• `{i} kilidini açmaq <MSGS / Media / Sticker / GIF / Oyun / Anketlər / Dəvət / Dəvət / Pin / ChangeInfo>`\n    İstifadə olunmuş qrupda istifadə olunan qəbulu kilidini açın."
+pmbot_5: "Zəhmət olmasa onu açmaq üçün kiməsə cavab verin."
+help_polls: "-\n\n• `{i} sorğu <sual>;<seçim>;<seçim> `\n    Verilmiş variantlarla anonim sorğu əldə edin\n\n• `{i} sorğu <sual>;<seçim>;<Seçim> |<tipi> `\n    İstədiyiniz növlə göstərilən sorğu alın!\n    tipi 'ictimai', `digər və ya` quiz` olmalıdır\n\n• `{i} sorğu <sual>;<seçim>;<Seçim> |Quiz_ <Cavab məlumatı> `\n    Viktorina anketini Cavab anketini düzgün olan seçimin sayını əldə edin"
+help_cleanaction: "-\n\n• `{i} əlavəsi\n    Qoşulduğu / sol / pin və s. Kimi bir şəkildə əlavə edilmiş söhbət MSG-ni təmizləyin.\n\n• `{i} remclean`\n    Söhbəti verilənlər bazasından çıxarın.\n\n• `{i} listplean`\n   Aktivləşdirildiyi bütün söhbətlərin siyahısını almaq."
+vct_2: "** Uğurla VC başlığını ** `{}`"
+udl_7: "'Bunu edə bilməzsən!'"
+help_unsplash: "-\n\n• {i} unsplash <axtarış sorğusu>;<heç şəkillər>\n    Unsplash görüntü axtarışı."
+help_misc: "-\n\n• `{i} eod`\n    `Bugünkü hadisəni almaq`\n\n• `{i} pntrst <link / id>`\n    Pinterest sancaqlarını yükləyin və göndərin\n\n• `{i} gadget <axtarış sorğusu>`\n    Telegram-dan gadget axtarışı.\n\n• `{i} randomuser`\n   Təsadüfi bir istifadəçi haqqında məlumat yaradın.\n\n• `{i} ascii <cavab image>`\n    Cavablı görüntüyü HTML-ə çevirin."
+help_profile: "-\n\n• `{i} SETNAME <Ad Ad // Soyad>`\n    Profil adınızı dəyişdirin.\n\n• `{i} setbio <bio>`\n    Profilinizi Bio-nu dəyişdirin.\n\n• `{i} setpic <pic>` cavab\n    Profil şəklinizi dəyişdirin.\n\n• `{i} delpfp <n> (isteğe bağlı)`\n    Bir profil şəkli silin, heç bir dəyər verilmirsə, başqa bir nömrəli şəkil silin.\n\n• `{i} poto <istifadəçi adı>`\n    Mövcud olduqda söhbət / istifadəçinin şəklini yükləyin."
+glitch_1: "'Glitching ...'"
+help_database: "-\n\n• ** Verilənlər bazası əmrləri, bunun nə olduğunu bilmirsinizsə istifadə etməyin. **\n\n• `{i} setdb key |dəyəri`\n    Verilənlər bazasında dəyəri təyin edin.\n    E.G:\n    '{i} setdb salam\n    '{i} setdb salamultroid burada\n    Setdb - Dəyişən dəyərləri DB-də çıxan dəyərlərə əlavə etmək üçün dəyişən dəyəri və ya {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i {i} dəyişən dəyərlərə dəyər əlavə etmək üçün.\n\n• '{i} deldb düyməsi'\n    DB-dən açarı silmək.\n\n• `{i} Old Keyname |Yeni açmaq\n    Açar adını yeniləyin"
+help_admintools: "-\n\n• `.promote <İstifadəçi / İstifadəçi / İstifadəçi adı>`\n• `.demote`\n    Çatdakı istifadəçini təşviq edin / azaltmaq.\n\n• '.ban <İstifadəçi / İstifadəçi / İstifadəçi adı> <Səbəb> `\n• '.Hunban``\n    İstifadəçini söhbətdən qadağan edir.\n\n• `.kick <İstifadəçi / İstifadəçi / İstifadəçi adı> <Səbəb>`\n    Çatdan istifadəçini vurun.\n\n• `.pin <mesaja cavab>`\n    Mesajı söhbətə bağlayın\n• `.tpin <vaxt> <temp pin mesaj>`\n• `.yunpin (hamısı) <mesaja cavab>`\n    Söhbətdəki mesajları kənarlaşdırın.\n\n• '.pinned`\n   Mövcud söhbətdə bağlanmış mesaj alın.\n• `.Elistpinned`\n   Mövcud söhbətdə bütün bağlanmış mesajları alın\n\n• `.Autodelete <24h / 7d / 1m / off>`\n   Sohbetdəki mesajları avtomatik silmək imkanı verin.\n\n• `.purge <mesaja cavab>`\n    Cavab verilən mesajdan bütün mesajları təmizləyin.\n\n• `.purgeme <mesaja cavab>`\n    Cavab verilən mesajdan yalnız mesajlarınızı təmizləyin.\n\n• `.purgeall`\n    Cavablı istifadəçinin bütün msgslərini silmək."
+help_logo: "-\n\n• `{i} loqotip <mətn>`\n   Verilən mətnin loqotipini yaradın\n   Və ya görüntüyə cavab verin, on mətni yazın.\n   Və ya Şrift sənədinə cavab verin, bu şriftlə yazmaq."
+pmbot_3: "İstifadəçi artıq qadağandır!"
+help_specialtools: "-\n\n• `{i} wspr <istifadəçi adı>`\n    Gizli mesaj göndərin ..\n\n• `{i} q <rəng-isteğe bağlı>`\n• `{i} q @ istifadəçi adı`\n• `{i} q r <rəng-isteğe bağlı>`\n• `{i} q saymaq`: 'Birdən çox quotes``\n    Kotirovkalar yaradın ..\n\n• `{i} etiket <query>`\n    Ur istəyinə uyğun olaraq etiketləri axtarın ..\n\n• `{i} getudio <audio-a cavab>`\n    İstədiyiniz video / GIF-ə qoymaq üçün Audio yükləyin.\n\n• `{i} addudio <video / gif>` cavabı\n    Yuxarıdakı səsləri cavablandırılmış video / GIF-ə qoyacaqdır.\n\n• `{i} dob <doğum tarixi>`\n    Yalnız DD / MM / YY formatına qoyun (məsələn .Dob 01/01/1999).\n\n• `{i} divar <query>`\n    Ur istəyinə görə HD divar kağızı axtarın .."
+sudo_4: "'Botlar sudo istifadəçiləri kimi əlavə edilə bilməz'"
+py_d2: "`Tam sudo istifadəçisi tələb olunur ...`"
+ast_4: "Mövcud dillərin siyahısı."
+py_d8: "Bu söhbətdə media və ya etiket göndərməyə icazə verilmir. '"
+py_d3: "`Bu qrup / kanalda istifadə edin. '"
+py_d5: "`Mən admin deyiləm. '"
+py_d6: "Bu əmri bot tərəfindən istifadə edilə bilməz!"
+py_c1: "Səhv simli seans.Kopyalama pastası düzgün!"
+py_d4: "** ⚠️ İnkişaf etdirici məhdudlaşdırılıb! **\nBunun nə etdiyini bilirsinizsə və davam etmək, istifadə etmək istəsəniz\n`{} setdb i_dev həqiqi '.\n\nBu təhlükəli ola bilər."
+py_d1: "Bu əmrdən indi istifadə edə bilməzsiniz.Bu botun sahibi! '"
+py_c2: "Heç bir simli seans tapılmadı.Çıxmaq ..."
+py_c3: "VC_SSESSION müddəti bitdi.Redis-dən VC_SESSION silmək ...\nVC hesabından səs / video chat istifadə etmək üçün onu yeniləyin / dəyişdirin ..."
+py_d7: "Söhbət onsuz da davam edir, bir müddət gözləyin, sonra yenidən cəhd edin."
+# ────────────────────────────────────────────────────────────────
+# C7 — telegram-rich-rebrand localization keys.
+# Pragmatic coverage of the significant *reusable* UI texts the
+# rebrand (Waves 0-3) introduced: help/stats cards, buttonkit labels,
+# Stars/gift dashboards, the `.biz` wizard, `.story` tool, `.quiz`
+# polls, and generic rich-card scaffolding. Not exhaustive — log
+# lines, exception internals and one-off usage strings stay as
+# plain-text literals in the plugin source.
+# ────────────────────────────────────────────────────────────────
+
+# ui_card_* — help/stats card headers + generic card labels (D1/C1/C3/C4)
+ui_card_help_menu: "Ultroid Help Menu"  # auto
+ui_card_stats_title: "📊 Stats"  # auto
+ui_card_plugins_label: "Plugins"  # auto
+ui_card_addons_label: "Addons"  # auto
+ui_card_commands_label: "Commands"  # auto
+ui_card_no_data: "No data available."  # auto
+ui_card_processing: "Processing…"  # auto
+ui_card_ready: "Ready"  # auto
+ui_card_error: "Error"  # auto
+
+# btn_* — button labels consumed by pyUltroid/_core/buttonkit.py callers
+btn_repo: "• Repo •"  # auto
+btn_support: "• Support •"  # auto
+btn_back: "« Bᴀᴄᴋ"  # auto
+btn_back_page: "« Bᴀᴄᴋ »"  # auto
+btn_previous: "« Pʀᴇᴠɪᴏᴜs"  # auto
+btn_next: "Nᴇxᴛ »"  # auto
+btn_ready: "✅ Ready"  # auto
+btn_update_now: "• Uᴘᴅᴀᴛᴇ Nᴏᴡ •"  # auto
+btn_open_again: "Oᴘᴇɴ Aɢᴀɪɴ"  # auto
+btn_send_plugin: "« Sᴇɴᴅ Pʟᴜɢɪɴ »"  # auto
+btn_manager_help: "• Manager Help •"  # auto
+btn_confirm: "✅ Confirm"  # auto
+btn_cancel: "⚠️ Cancel"  # auto
+btn_ok: "ℹ️ OK"  # auto
+btn_buy_premiumbot: "Buy via @PremiumBot"  # auto
+
+# stars_* — Stars wallet/top-up/revenue dashboards (D6/B1/B2) + gift
+# catalog/wrapper UI (B3, plugins/gifts.py) sharing the same family.
+stars_col_date: "Date"  # auto
+stars_col_delta: "Δ Stars"  # auto
+stars_col_from_to: "From/To"  # auto
+stars_col_note: "Note"  # auto
+stars_col_stars: "Stars"  # auto
+stars_col_price: "Price"  # auto
+stars_col_field: "Field"  # auto
+stars_col_value: "Value"  # auto
+stars_no_transactions: "No transactions yet."  # auto
+stars_wallet_header: "⭐ Stars Wallet — {}"  # auto
+stars_balance_label: "Balance: **{} XTR**"  # auto
+stars_recent_tx_caption: "Recent transactions"  # auto
+stars_topup_header: "⭐ Stars Top-up Options"  # auto
+stars_topup_info: "Informational only — this userbot cannot complete an in-app purchase. Use Telegram's own Stars purchase flow (Settings → Telegram Stars → Buy) or @PremiumBot."  # auto
+stars_topup_caption: "Available packages"  # auto
+stars_revenue_header: "📊 Stars Revenue — {}"  # auto
+stars_current_balance: "Current balance"  # auto
+stars_available_balance: "Available balance"  # auto
+stars_overall_revenue: "Overall revenue"  # auto
+stars_withdrawal_enabled: "Withdrawal enabled"  # auto
+stars_usd_rate: "USD rate"  # auto
+stars_revenue_caption: "Revenue status"  # auto
+stars_gift_catalog_header: "⭐ Star Gift Catalog"  # auto
+stars_gift_saved_header: "🎁 Saved Star Gifts"  # auto
+stars_gift_col_id: "ID"  # auto
+stars_gift_col_avail: "Avail"  # auto
+stars_gift_col_flags: "Flags"  # auto
+stars_gift_none_available: "`No star gifts available right now.`"  # auto
+stars_gift_sent: "✅ Sent **Star Gift #{}** to **{}**."  # auto
+stars_gift_working: "Working on it…"  # auto
+stars_gift_cancelled: "Cancelled."  # auto
+
+# biz_* — `.biz` Telegram Business wizard (D7/B8, plugins/business.py)
+biz_title_overview: "💼 Telegram Business"  # auto
+biz_title_premium_required: "⭐ Telegram Premium Required"  # auto
+biz_title_feature_unavailable: "⚠️ Feature Unavailable"  # auto
+biz_title_error: "❌ Error"  # auto
+biz_title_greeting: "👋 Greeting Message"  # auto
+biz_title_away: "🌙 Away Message"  # auto
+biz_title_intro: "🎬 Business Intro"  # auto
+biz_title_location: "📍 Business Location"  # auto
+biz_title_hours: "🕒 Work Hours"  # auto
+biz_title_links: "🔗 Business Chat Links"  # auto
+biz_premium_only_note: "Business features are Premium-only (server-enforced)."  # auto
+biz_greeting_disabled: "Greeting message disabled."  # auto
+biz_away_disabled: "Away message disabled."  # auto
+biz_intro_removed: "Business intro removed."  # auto
+biz_location_cleared: "Business location cleared."  # auto
+biz_hours_cleared: "Work hours cleared."  # auto
+
+# story_* — `.story`/`.storydel`/`.stealth` (D8/A9, plugins/storytools.py)
+story_posted: "✅ **Story posted**{} — period `{}h`."  # auto
+story_deleted: "✅ **Deleted {} story/stories.**"  # auto
+story_stealth_on: "✅ **Stealth mode activated** — recent story views are hidden."  # auto
+story_error_generic: "❌ **Error.**\n`{}`"  # auto
+story_error_unavailable: "❌ **Story feature unavailable.**\n`{}`"  # auto
+story_error_failed: "❌ **Story request failed.**\n`{}`"  # auto
+story_premium_required: "⭐ **Telegram Premium required.**\n`{}`"  # auto
+story_reply_media_required: "`Reply to a photo/video (or attach one) to post it as a Story.`"  # auto
+
+# quiz_* — `.quiz` poll command (A4, plugins/utilities.py)
+quiz_usage: "`Usage: .quiz <question> | <opt1> | <opt2> ...`"  # auto
+quiz_need_options: "`Need at least 2 options, e.g. .quiz <question> | <opt1> | <opt2>`"  # auto
+quiz_not_supported: "`Oops, you can't send quiz polls here!\n\n{}`"  # auto
+
+# rich_* — generic rich-card scaffolding shared across D1 consumers
+rich_fallback_notice: "(rich card unavailable — showing plain text)"  # auto
+rich_no_data: "No data available."  # auto
+rich_cancelled: "Cancelled."  # auto
+rich_confirm_prompt: "Tap **Confirm**, or re-run this exact command with `confirm` appended."  # auto
+rich_working: "Working on it…"  # auto

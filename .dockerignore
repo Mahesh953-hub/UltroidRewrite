@@ -1,0 +1,45 @@
+# =============================================================================
+# SarahUB — Docker build context exclusions
+# Everything listed here is omitted from the image build context, which keeps
+# the image small and — critically — keeps secrets and local runtime state out
+# of the built layers.
+# =============================================================================
+
+# ---- Secrets / local runtime state (MUST never be baked into an image) ----
+.env
+.env.*
+!.env.sample
+*.session
+*.session-journal
+asst.session
+*.localdb.json
+ultroid.json
+ultroid.localdb.json
+
+# ---- Version control ----
+.git
+.gitignore
+.github
+
+# ---- Python ----
+.venv/
+venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+
+# ---- Node ----
+node_modules/
+
+# ---- Logs, caches, and generated artifacts ----
+*.log
+vc.log
+*.tar.xz
+*.tar.xz.md5
+
+# ---- Tests (not needed at runtime) ----
+tests/

@@ -1,0 +1,42 @@
+# Session files
+*.session
+*.session-journal
+asst.session
+
+# Environment files
+.env
+.venv
+venv
+env/
+.env.*
+!.env.sample
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node/JavaScript dependencies
+node_modules/
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/
+
+# Local cache/temporary files
+.cache/
+*.log
+ultroid.json
+ultroid.localdb.json
+resources/error_cards/
+addons/
+mehrama.mp3
+pr-body-phase0-3.md
+
+# local agent/runtime artifacts
+opencode.jsonc
+env.txt
+.codegraph/

@@ -1,0 +1,144 @@
+# Ultroid packaging manifest.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ultroid"
+version = "28.09.2026"
+description = "Ultroid — Modernized Telethon userbot."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "Mahesh953-hub" }]
+keywords = ["telegram", "userbot", "telethon", "ultroid"]
+
+# Mirrored from requirements.txt (canonical). Keep in sync.
+dependencies = [
+    "Telethon",
+    "py-tgcalls",
+    "pycryptodome",
+    "pytubefix",
+    "python-decouple",
+    "python-dotenv",
+    "pyshorteners",
+    "google-search-results",
+    "motor",
+    "pydantic",
+    "aiofiles",
+    "tesseract",
+    "spotipy",
+    "pillow",
+    "ffmpeg-python",
+    "authlib",
+    "coloredlogs",
+    # google.generativeai removed (EOL) — consolidated onto google-genai.
+    "google-genai",
+    "pyrogram",
+    "urllib3",
+    "huggingface_hub",
+    "azure-ai-inference",
+    "autoevals",
+    "openai>=1.40",
+    "duckduckgo_search",
+    # Git-sourced: covid, AsyncLyricsExtractor, drawHub — see [tool.uv.sources].
+    # NOTE: the drawHub repo package metadata name is actually phlogo.
+    "covid",
+    "asynclyrics-extractor",
+    "phlogo",
+    "emoji",
+    "fonttools",
+    "gtts",
+    "gingerit",
+    "jikanpy",
+    "pokedex.py",
+    "pyfiglet",
+    "pygments",
+    "pyjokes",
+    "quotefancy",
+    "speechrecognition",
+    "speedtest-cli",
+    "textblob",
+    "wikipedia",
+    # Zip-sourced: google_trans_new 1.2.0 — see [tool.uv.sources].
+    "google-trans-new",
+    "markdownify",
+    "meval",
+    "itsdangerous",
+    "wget",
+    "g4f",
+    # Previously imported-but-undeclared (W0-A):
+    "mutagen",        # required by ALL 14 vc/ modules
+    "GitPython",      # startup/loader.py, plugins/_inline.py, fns/helper.py
+    "fastapi",        # server.py
+    "uvicorn",        # server.py
+    "nest-asyncio",   # server.py
+    "dnspython",      # pyUltroid/__init__.py DNS patch (unconditional import)
+    "redis",           # _database.py Redis backend
+    "pymongo",         # _database.py Mongo backend
+    "psycopg2-binary", # _database.py SQL backend
+]
+
+[project.optional-dependencies]
+# Voice-chat music stack (plugins/vcmusic, plugins/youtube, vc/).
+# The core engine deps (py-tgcalls, pycryptodome, mutagen, pytubefix) are
+# already in `dependencies` because vc/_pytgcalls.py imports them at module
+# level; this extra only adds the extraction toolchain.
+#
+# System requirement (NOT a pip package — install it separately):
+#   ffmpeg            the pytgcalls audio pipeline shells out to it
+#   fonts-dejavu-core the portrait error card needs a monospace face; without
+#                     one Pillow silently falls back to a proportional font.
+#                     Debian/Ubuntu: apt-get install -y ffmpeg fonts-dejavu-core
+#                     Verify with: python -c "from pyUltroid.imaging._errorcard import mono_available; print(mono_available())"
+vc = ["yt-dlp", "tgcrypto"]
+# Web/setup server extras beyond the core fastapi/uvicorn already in deps.
+web = ["aiohttp", "jinja2"]
+# Optional AI providers used by pyUltroid/agent and plugins/brain.py.
+# (openai + google-genai are core deps; aiohttp backs the Ollama local
+# provider and the web_search tool — W2-C.)
+ai = ["anthropic", "groq", "aiohttp"]
+# Optional plugin dependencies (each missing one currently kills its plugin
+# at load time — see exploration doc section F).
+plugins = [
+    "telegraph",
+    "pytz",
+    "psutil",
+    "qrcode",
+    "akipy @ git+https://github.com/ufoptg/akipy.git",
+    "htmlwebshot",
+    "oauth2client",
+    "opencv-python-headless",
+]
+# Local-deploy extras historically in resources/startup/optional-requirements.txt.
+local = [
+    "apscheduler",
+    "bs4",
+    "CairoSVG",
+    "enhancer>=0.3.4",
+    "heroku3",
+    "google-api-python-client",
+    "lottie",
+    "lxml",
+    "numpy>=1.21.2",
+    "profanitydetector",
+    "pypdf2>=1.26.0",
+    "requests",
+    "tabulate",
+    "youtube-search-python",
+]
+# Development / testing.
+dev = ["pytest", "pytest-asyncio", "uv"]
+
+[tool.setuptools.packages.find]
+include = ["pyUltroid*", "assistant*", "plugins*", "vc*", "custom*", "strings*"]
+
+# uv sources for the non-PyPI pins (mirrors the git+/zip lines of
+# requirements.txt). The Telethon fork pin is intentional — do not
+# switch it to PyPI telethon.
+[tool.uv.sources]
+Telethon = { git = "https://github.com/Mahesh953-hub/Telethon.git" }
+covid = { git = "https://github.com/ufoptg/covid.git" }
+asynclyrics-extractor = { git = "https://github.com/New-dev0/AsyncLyricsExtractor.git" }
+phlogo = { git = "https://github.com/ufoptg/drawHub.git" }
+google-trans-new = { url = "https://github.com/ufoptg/google_trans_new/archive/refs/tags/1.2.0.zip" }

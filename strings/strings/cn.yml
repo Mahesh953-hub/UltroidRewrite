@@ -1,0 +1,676 @@
+name: Chinese
+natively: 简体中文
+
+authors:
+  - stevenliuit
+  - junbaor
+
+# commons
+com_1: "`处理中...`"
+com_2: "`搜索中...`"
+
+# help
+help_1: "`{}` 不是一个有效的插件!"
+help_2: "机器人没有响应内联查询.\n考虑使用 `{}重启`"
+help_3: "`请从中为您的机器人打开内联模式` @Botfather."
+
+# autopic
+autopic_1: "嘿，给我发信息 .."
+autopic_2: "找不到的结果 `{}`"
+autopic_3: "有收藏吗 `{}` 与您的搜索相关 !\n开始自选 !"
+
+# inline
+inline_1: "[Ultroid 帮助](t.me/UltroidSupportChat)\n\n
+**帮助菜单 {}.\n\n
+插件 ~ {}**"
+inline_2: "[Ultroid 帮助](t.me/UltroidSupportChat)\n\n
+**帮助菜单 {}.\n\n
+附加组件 ~ {}**"
+inline_3: "[Ultroid 帮助](t.me/UltroidSupportChat)\n\n
+**帮助菜单 {}.\n\n
+附加组件 ~ {}\n\n
+去添加 `附加组件` var为true的值**"
+inline_4: "**{}的机器人\n\n主菜单\n\n插件 ~ {}\n附加组件 ~ {}\n命令总数 ~ {}**"
+inline_5: "**菜单已关闭**"
+
+# tagnotif
+tagnot_1: "{} 把你带进来 {}\n\n```{}```\n\n[📨消息📨]({})"
+tagnot_2: "{} 把你带进来 {}\n\n [📨消息📨]({})"
+
+# whisper
+wspr_1: "@{} 给你的秘密信息.\n阅读后删除邮件.\n否则下一条消息将不会更新."
+wspr_2: "消息 删除"
+
+# afk
+afk_1: "`不再 AFK\n\n他离开了 ~ {}`"
+afk_2: "#AFK\n将AFK模式设置为False\n使用AFK是为了 {}`"
+afk_3: "我现在是 AFK.\n上次看到 {} 前.`\n\n**原因:** `{}`"
+afk_4: "`我现在是 AFK.\n\n上次看到 {} 前.`"
+afk_5: "`去 AFK.`\n\n**原因:** `{}`"
+afk_6: "我要去 AFK."
+
+# bot
+alive_1: "**Ultroid 用户机器人...**\n\n
+**{}**\n\n
+┏━━━━━━━━━━━━━━━━━━━━━\n
+┣ **所有者** - `{}`\n
+┣ **版本** - `{}`\n
+┣ **启动时间** - `{}`\n
+┣ **正常运行时间** - `{}`\n
+┣ **Python** - `{}`\n
+┣ **Telethon** - `{}`\n
+┣ **分支** - `{}`\n
+┗━━━━━━━━━━━━━━━━━━━━━"
+log: "**Heroku** Ultroid 日志.\n粘贴 [here]({}) too!"
+ping: "**Pong !!** `{}毫秒`\n**Uptime** - `{}`"
+usage: "**⚙️ Dyno 用法 ⚙️**:\n\n
+ -> `Dyno 用法 for`  **{}**:\n
+     •  `{}`**h**  `{}`**m**
+**|**  [`{}`**%**]\n\n
+ -> `本月剩余的Dyno小时配额`:\n
+     •  `{}`**h**  `{}`**m**
+**|**  [`{}`**%**]\n\n
+**总磁盘空间: {}\n\n**
+**Used: {}  Free: {}\n\n**
+**📊Data 用法\n\n上传: {}\n下载: {}\n\n**
+**CPU: {}%\nRAM: {}%\nDISK: {}%**"
+shutdown: "拜拜 {}.\n`关闭...`"
+
+# broadcast
+bd_1: "`添加到数据库...`"
+bd_2: "`尝试将所有管理频道添加到数据库...`"
+bd_3: "**完成.**\n数据库中已存在聊天记录: {}\n新增: {}"
+bd_4: "已添加频道!"
+bd_5: "`已添加到数据库!`"
+bd_6: "`频道已经在数据库!`"
+
+# carbon
+carbon_1: "处理"
+carbon_2: "Carbonised by [{}](tg://user?id={})"
+
+# chats
+chats_1: "`处理中...`"
+chats_2: "`无法删除此聊天`"
+chats_3: "`我不是管理员`"
+chats_4: "#已删除\n已删除 {}"
+chats_5: "你的 [{}]({}) 组已经成为了 Boss!"
+chats_6: "加入 @TeamUltroid"
+
+# converter
+cvt_1: "回复任一媒体或文件."
+cvt_2: "给出文件的名称和扩展名"
+cvt_3: "`处理中...`"
+cvt_4: "回复任何媒体."
+
+# core
+core_1: "发现模块"
+core_2: "{}.py 使用 .paste 粘贴在 neko 和 raw .."
+core_3: "再次搜索..?"
+core_4: "发现模块 {}"
+core_5: "{}.py 使用 .paste 粘贴在 neko 和 raw .."
+core_6: "没找到 {}.py 模块"
+core_7: "没有该模块"
+core_8: "没有发现名称是 {}.py 的模块"
+core_9: "`给出你要卸载的插件名称`"
+core_10: "**卸载** `{}` **成功.**"
+core_11: "**你不能不加载官方的插件**"
+core_12: "**无插件** `{}`"
+core_13: "`给出你要卸载的插件名称`"
+core_14: "**卸载** `{}` **成功.**"
+core_15: "**你不能卸载官方的插件**"
+core_16: "`给出你要加载的插件名称`"
+core_17: "**加载成功** `{}`"
+core_18: "**无法加载** `{}` **因为以下错误.**\n`{}`"
+
+# fedutils
+sf_1: "启动 Mass-FedBan..."
+sf_2: "`没有指定用户!`"
+sf_3: "你不能禁止我的开发，你这个笨蛋！!!"
+sf_4: "`好像是 rose 没有相应, 或者插件的行为不正常`"
+sf_5: "您只能每5分钟使用一次fed指令"
+sf_6: "5分钟后再试一次."
+sf_7: "无法收集 FedAdminList. 重试中 ({}/3)..."
+sf_8: "错误"
+sf_9: "无法收集 FedAdminList."
+sf_10: "FBaning in {} feds."
+sf_11: "指定的 FBan Group ID 不正常."
+sf_12: "{} 排除."
+sf_13: "移除 FedAdmin 文件时出错.\n{}"
+sf_14: "SuperFBan 已完成.\n总计 Feds - {}.\n不包括 - {}.\n 受影响的 {} feds.\n#TB"
+sf_15: "启动 Mass-UnFedBan..."
+sf_16: "SuperUnFBan 已完成.\n总计 Feds - {}.\n不包括 - {}.\n 受影响的 {} feds.\n#TB"
+sf_17: "`给我一个ID, 或者回复某人的信息查看他/她的 fedstat.`"
+sf_18: "列表 feds {} 已被禁止.\n\n使用Ultroid收集."
+sf_19: "**错误**\n `Unblock` @MissRose_Bot ` 再试一次!"
+sf_20: "`提取信息中...`"
+sf_21: "\n\n由Ultroid提取的FedInfo"
+
+# gdrive
+gdrive_1: "`你已经授权过 Google Drive`"
+gdrive_2: "去 [这里](https://console.developers.google.com/flows/enableapi?apiid=drive) 获取你的 `GDRIVE_CLIENT_ID` 和 `GDRIVE_CLIENT_SECRET`\n\n
+发送你的 GDRIVE_CLIENT_ID 和 GDRIVE_CLIENT_SECRET 到这里.\n`GDRIVE_CLIENT_ID GDRIVE_CLIENT_SECRET` 用空格分开."
+gdrive_3: "`错误的 Client Id`"
+gdrive_4: "`发生了一些错误! 再次发送 `/auth`.\n如果发生同样的问题请联系 `@TeamUltroid"
+gdrive_5: "`成功!\n你已经在 Ultroid 用户机器人 上设置好了 Google Drive.`"
+gdrive_6: "`去 `{}` 并发送 ``/auth.`"
+gdrive_7: "**文件成功上传到 G-Drive :**\n\n[{}]({})"
+
+# pmpermit
+pmperm_1: "请等待我的回复，否则你会被屏蔽并被举报为垃圾信息!!"
+pmperm_2: "你在我主人的邮箱里乱发信息, 我不喜欢这样.\n你已经被屏蔽, 并被报告为垃圾信息, 直到进一步的通知."
+pmperm_3: "回复别人的消息或在私聊里试试这个命令."
+
+# updater
+upd_1: "`正在检查更新, 请稍等....`"
+upd_2: "`哎呀, 出现一些问题无法继续更新.`\n\n**日志跟踪:**\n"
+upd_3: "**有新的更新可用 [[{}]]({}/tree/{}):\n\n更新日志**\n\n{}"
+upd_4: "`变更日志太大，查看文件才能看到.`"
+upd_6: "\n`你的机器人是`  **up-to-date**  `与`  **[[{}]]({}/tree/{})**\n"
+
+# upload download
+udl_1: "`回复你想下载的文件或媒体...`"
+udl_2: "下载成功..\nTo\n`{}`\nin `{}`"
+udl_3: "`给出文件的具体路径`"
+
+# words
+wrd_1: "**Word** - `{}`\n\n**含义** - \n"
+wrd_2: "**Word** - `{}`\n\n**同义词** - \n"
+wrd_3: "**Word** - `{}`\n\n**反义词** - \n"
+
+# ---------------------------------------------------#
+
+# assisant
+ast_1: "选择你要设置的 API."
+ast_2: "**remove.bg API**\n输入你的 remove.bg API key .\n\n使用 /cancel 终止操作."
+ast_3: "Hi {}. 请浏览以下选项"
+
+
+chab_1: "Reply to a user or give me his id/username to add an AI ChatBot!"
+grt_5: "`Welcome Note Deleted`"
+clan_1: "Added Clean Action Setting For this Chat"
+gas_1: "Please provide a raw link!"
+wrd_7: "No synonym found!!\n\n`{}`"
+vcbot_1: "`Left the voice chat.`"
+help_mute: "-\n\n• `{i}mute <reply to msg/ user id>`\n    Mute user in current chat.\n\n• `{i}unmute <reply to msg/ user id>`\n    Unmute user in current chat.\n\n• `{i}dmute <reply to msg/ user id>`\n    Mute user in current chat by deleting msgs.\n\n• `{i}undmute <reply to msg/ use id>`\n    Unmute dmuted user in current chat.\n\n• `{i}tmute <time> <reply to msg/ use id>`\n    s- seconds\n    m- minutes\n    h- hours\n    d- days\n    Mute user in current chat with time."
+cha_8: "Source channels in database:"
+nightm_3: "Done, Added Current Chat To Night Mode"
+help_snips: "-\n\n• `{i}addsnip <word><reply to a message>`\n    add the used word as snip relating to replied message.\n\n• `{i}remsnip <word>`\n    Remove the snip word..\n\n• `{i}listsnip`\n    list all snips.\n\n• Use :\n    type `$(ur snip word)` get setted reply."
+wbl_1: "`Provide a File Name pls..`"
+sts_12: "`Kanged!`\n`Emoji- {}\n`Sticker Pack` [here](t.me/addstickers/{})"
+udl_4: "`Trying to download...`"
+tban_1: "`Reply to someone or give its id...`"
+fsub_4: "Join Channel"
+antiflood_1: "`Antiflood Settings Disabled`"
+autopic_5: "AUTOPIC Stopped!"
+antiflood_4: "`Successfully Updated Antiflood Settings to {} in this chat.`"
+help_fileshare: "-\n\n• `{i}store <reply_to_message>`\n   Store the replied message/media and generate a shareable link to that file, to be accessed via your assistant bot!\n\n• `{i}delstored <link of stored file>`\n    Delete stored file.\n\n• `{i}liststored`\n   Get all stored messages.\n\n• Go Inline with your assistant bot with `filestore` to see stored files in inline."
+aki_3: "Timeout !"
+purgeall_1: "`Reply to someone's msg to delete.`"
+flr_6: "No Filters Found Here"
+kick_4: "{} **was kicked by** {} **in** `{}`"
+sts_9: "`Ooo Animated Sticker 👀...`"
+sts_7: "`Sticker added in a Different Pack !\nThis Pack is Newly created!\nYour pack can be found` [here](t.me/addstickers/{})"
+wspr_5: "You Can't do this"
+dm_1: "`Give Chat username or id where to send.`"
+kick_3: "`I Cant kick him ever...`"
+cvt_7: "`Reply to a readable file`"
+help_13: "Do '{}setdb ADDONS True' to Load Official Addons"
+nightm_1: "Give Time in correct format"
+snip_3: "No Snips Found Here."
+clst_4: "Something went wrong..."
+vcbot_22: "`Cleaned All Queues In Chat`"
+whs_4: "**Song Recognised!**\nName: __{}__"
+cha_2: "Source added successfully"
+vcbot_10: "Removed Chat from Vc AUTH Groups!"
+audiotools_7: "Trimmed Audio From `{}` To `{}`"
+wrd_4: "`Give a Word to Find Its Meaning..`"
+help_blacklist: "-\n\n• `{i}blacklist <word/all words with a space>`\n    blacklist the choosen word in that chat.\n\n• `{i}remblacklist <word>`\n    Remove the word from blacklist..\n\n• `{i}listblacklist`\n    list all blacklisted words.\n\n  'if a person uses blacklist Word his/her msg will be deleted'\n  'And u Must be Admin in that Chat'"
+vct_1: "`Voice Chat Started...`"
+vcbot_5: "`Re-joining this voice chat.`"
+calc_1: "• Ultroid Inline Calculator •"
+autopic_4: "AUTOPIC was not in use !!"
+ascii_2: "`Converting to html...`"
+help_bot: "• `{i}alive` | `{i}alive inline`\n    Check if your bot is working.\n\n• `{i}ping`\n    Check Ultroid's response time.\n\n• `{i}update`\n    See changelogs if any update is available.\n\n• `{i}cmds`\n    View all plugin names.\n\n• `{i}restart`\n    To restart your bot.\n\n• `{i}logs (sys)`\n    Get the full terminal logs.\n• `{i}logs carbon`\n    Get the carbonized sys logs.\n• `{i}logs heroku`\n   Get the latest 100 lines of heroku logs.\n\n• `{i}shutdown`\n    Turn off your bot."
+ascii_1: "`Reply to image.`"
+sts_2: "`Reply to an Animated Sticker...`"
+ban_4: "{} **was banned by** {} **in** `{}`"
+asstcmd_5: "No commands found"
+help_usage: "• `{i}usage`\n    Get overall usage.\n\n• `{i}usage heroku`\n   Get heroku stats.\n\n• `{i}usage db`\n   Get database storage usage."
+help_downloadupload: "-\n\n• `{i}ul <path/to/file>`\n    Upload files on telegram.\n    Use following arguments before or after filename as per requirement:\n      `--stream` to upload as stream.\n      `--delete` to delete file after uploading.\n      `--no-thumb` to upload without thumbnail.\n\n• `{i}dl <filename(optional)>`\n    Reply to file to download.\n\n• `{i}download <DDL> (| filename)`\n    Download using DDL. Will autogenerate filename if not given."
+com_6: "Uploading..."
+help_variables: "-\n\n• `{i}get var <variable name>`\n   Get value of the given variable name.\n\n• `{i}get type <variable name>`\n   Get variable type.\n\n• `{i}get db <key>`\n   Get db value of the given key.\n\n• `{i}get keys`\n   Get all redis keys."
+help_antiflood: "-\n\n• `{i}setflood <integer>`\n    Set flood limit in a chat.\n\n• `{i}remflood`\n    Remove flood limit from a chat.\n\n• `{i}getflood`\n    Get flood limit of a chat."
+help_tools: "-\n\n• `{i}circle`\n    Reply to a audio song or gif to get video note.\n\n• `{i}ls`\n    Get all the Files inside a Directory.\n\n• `{i}bots`\n    Shows the number of bots in the current chat with their perma-link.\n\n• `{i}hl <a link> <text-optional>`\n    Embeds the link with a whitespace as message.\n\n• `{i}id`\n    Reply a Sticker to Get Its Id\n    Reply a User to Get His Id\n    Without Replying You Will Get the Chat's Id\n\n• `{i}sg <reply to a user><username/id>`\n    Get His Name History of the replied user.\n\n• `{i}tr <dest lang code> <(reply to) a message>`\n    Get translated message.\n\n• `{i}webshot <url>`\n    Get a screenshot of the webpage.\n\n• `{i}shorturl <url> <id-optional>`\n    shorten any url..."
+nightm_5: "Something Went Wrong"
+wbs_1: "`Give a URL please!`"
+flr_2: "Filters Found In This Chats Are"
+dm_5: "`Check in Private.`"
+vcbot_4: "`Please specify a volume from 1 to 200!`"
+help_webupload: "-\n\n• `{i}webupload`\n    Upload files on another server."
+help_profanityfilter: "-\n\n•`{i}addprofanity`\n   If someone sends bad word in a chat, Then bot will delete that message.\n\n•`{i}remprofanity`\n   From chat from Profanity list."
+notes_4: "Notes Found In This Chats Are"
+writer_1: "`Give Some Text Too`"
+cvt_5: "Replied file has no thumbnail.`"
+vcbot_14: "`Paused playback in this chat.`"
+wrd_5: "Synonyms"
+flr_4: "Done : Filter `{}` Saved."
+help_instagram: "-\n\n• `{i}instadl <Instagram Url>`\n  `Download Instagram Media...`\n\n• `{i}instadata <username>`\n  `Get Instagram Data of someone or self`\n\n• `{i}instaul <reply video/photo> <caption>`\n  `Upload Media to Instagram...`\n\n• `{i}igtv <reply video> <caption>`\n  `Upload Media to Igtv...`\n\n• `{i}reels <reply video> <caption>`\n  `Upload Media to Instagram reels...`\n\n• Go Inline with Your Assistant with query `instatm`\n   To get home page's posts...\n\n• Fill `INSTA_USERNAME` and `INSTA_PASSWORD`\n  before using it.."
+wspr_3: "Add some id or username too"
+purge_1: "`Reply to a message to purge from.`"
+cha_7: "Destination channels in database:"
+youtube_6: "`Downloading audio song...`"
+help_autoban: "• `{i}autokick <on/off>`\n    on - To enable.\n    off - To disable.\n    Automatically kick new joined users from the group.\n\n• `{i}cban`\n    Enable/Disable autobanning send as channel in used chat.\n\n• `{i}addwl <Username>`\n   Add Channel to channelban whitelist.\n\n• `{i}remwl <Username>`\n   Remove Channel from channelban whitelist.\n\n• `{i}listwl` : List all whitelist channels."
+can_2: "∆ #UsernameUpdate\n\n@{} changed username to @{}"
+aki_1: "Game has been Terminated...."
+youtube_8: "`Downloading video song...`"
+help_button: "-\n\n• `{i}button <text with button format`\n   create button u can reply to pic also\n\nFormat:- `{i}button Hey There! @UseUltroid 😎.\n[Ultroid | t.me/theUltroid][Support | t.me/UltroidSupportChat | same]\n[TeamUltroid | t.me/TeamUltroid]`"
+bot_1: "Hey,  I am alive."
+youtube_7: "Give me a (youtube) search query to download video from!"
+com_5: "Downloading..."
+schdl_1: "`Scheduled message Successfully`"
+help_7: "Inline Plugins••"
+help_globaltools: "-\n\n• `{i}gban <reply user/ username>`\n• `{i}ungban`\n    Ban/Unban Globally.\n\n• `{i}gstat <reply to user/userid/username>`\n   Check if user is GBanned.\n\n• `{i}listgban` : List all GBanned users.\n\n• `{i}gmute` | `{i}ungmute` <reply user/ username>\n    Mute/UnMute Globally.\n\n• `{i}gkick <reply/username>` `Globally Kick User`\n• `{i}gcast <text/reply>` `Globally Send msg in all grps`\n\n• `{i}gadmincast <text/reply>` `Globally broadcast in your admin chats`\n• `{i}gucast <text/reply>` `Globally send msg in all pm users`\n\n• `{i}gblacklist <chat id/username/nothing (for current chat)`\n   Add chat to blacklist and ignores global broadcast.\n• `{i}ungblacklist` `Remove the chat from blacklist.`\n\n• `{i}gpromote <reply to user> <channel/group/all> <rank>`\n    globally promote user where you are admin\n    - Set whether To promote only in groups/channels/all.\n    Eg- `gpromote group boss` ~ promotes user in all grps.\n        `gpromote @username all sar` ~ promote the user in all group & channel\n• `{i}gdemote` - `demote user globally`"
+help_words: "-\n\n• `{i}meaning <word>`\n    Get the meaning of the word.\n\n• `{i}synonym <word>`\n    Get all synonyms.\n\n• `{i}antonym <word>`\n    Get all antonyms.\n\n• `{i}ud <word>`\n    Fetch word defenition from urbandictionary."
+srch_2: "`No such user found...`"
+cha_5: "Source removed from database"
+fsub_8: "Thanks For Joining !"
+youtube_2: "`Give A Direct Audio Link To Download`"
+fsh_4: "**No files stored!**"
+instu_2: "Recent Searches.."
+grt_6: "`No goodbye was set!`"
+whs_2: "`Trying to identify the song....`"
+help_afk: "-\n\n• `{i}afk <optional reason>`\n    AFK means away from keyboard,\n    After this is activated, if someone tags or messages you, he/she would get an automated reply from the bot.\n\n    (Note : Set a media file in afk messages by replying to any media with `{i}afk <reason>`)."
+help_broadcast: "• `{i}addch <id/reply to list/none>`\n    Add chat to database. Adds current chat if no id specified.\n\n• `{i}remch <all/id/none>`\n    Removes the specified chat (current chat if none specified), or all chats.\n\n• `{i}broadcast <reply to msg>`\n    Send the replied message to all chats in database.\n\n• `{i}forward <reply to msg>`\n     Forward the message to all chats in database.\n\n• `{i}listchannels`\n    To get list of all added chats."
+whs_1: "<• Reply to Audio File •>"
+help_resize: "-\n\n•`{i}size <reply to media>`\n   To get size of it.\n\n•`{i}resize <number> <number>`\n   To resize image on x, y axis.\n   eg. `{i}resize 690 960`"
+fka_1: "Starting Fake Action For {} sec."
+upd_5: "Click the below button to update."
+adm_2: "`Hmm.. Guess I have no rights here!`"
+wspr_4: "User {} Not Found\nSearch Again"
+act_2: "AUTOCORRECT Feature Off"
+help_giftools: "•`{i}invertgif`\n  Make Gif Inverted(negative).\n\n•`{i}bwgif`\n  Make Gif black and white\n\n•`{i}rvgif`\n  Reverse a gif\n\n•`{i}vtog`\n  Reply To Video , It will Create Gif\n  Video to Gif\n\n•`{i}gif <query>`\n   Send video regarding to query."
+bot_2: "Stats"
+adm_1: "`I couldn't get who he is!`"
+can_3: "∆ #UsernameUpdate\n\n{} removed its username. (@{})"
+bot_3: "Repo"
+ban_5: "**Reason**: `{}`"
+kick_1: "`I don't have the right to kick a user.`"
+pmbot_6: "User was never banned!"
+help_vctools: "-\n\n• `{i}startvc`\n    Start Group Call in a group.\n\n• `{i}stopvc`\n    Stop Group Call in a group.\n\n• `{i}vctitle <title>`\n    Change the title Group call.\n\n• `{i}vcinvite`\n    Invite all members of group in Group Call.\n    (You must be joined)"
+help_5: "Addons •"
+vct_4: "`Voice Chat Stopped...`"
+pro_2: "{} `is now an admin in {} with title {}.`"
+vct_6: "No input Found!"
+audiotools_4: "`Incorrect Data`"
+audiotools_5: "`Trying To Download...`"
+help_audiotools: "✘ Commands Available - \n`.makevoice <reply to audio>`\n   creates a voice note from Audio.\n\n`.atrim <from time> - <to time>`\n   trim audio as per given time.\n   time must be in seconds. `.atrim 50-70`\n\n`.extractaudio <reply to media>`\n   To extract the audio from it."
+inline_7: "Do .help {} to get the list of commands."
+blk_1: "`Give the word to blacklist..`"
+can_4: "∆ #UsernameUpdate\n\n{}'s new username --> @{}"
+audiotools_8: "`Reply to Video File..`"
+sts_5: "**Pack Kanged Successfully**.\n**Kanged Pack:** [link]({})"
+vcbot_2: "**ERROR:**\n{}"
+help_chatbot: "-\n\n• `{i}addai <reply to user/give username/userid>`\n   Add a AI ChatBot to reply to that user.\n\n• `{i}remai <reply to user/give username/userid>`\n   Remove the AI ChatBot.\n\n• `{i}repai <reply to user/give a message>`\n   Reply to the user with a message by an AI.\n\n• `{i}listai`\n   List the currently AI added users."
+sf_22: "No user was designated."
+sts_6: "`Reply to message/media...`"
+blk_3: "`Give the word to remove from blacklist..`"
+antiflood_2: "`No flood limits in this chat.`"
+asstcmd_6: "**ALL ASSISTANT CMDS**"
+spcltool_4: "`First reply an audio with .raw`"
+pmbot_4: "`GoodBye! You have been banned.`\n**Further messages you send will not be forwarded.**"
+listpin_1: "There is no message pinned in this group!"
+bot_4: "Support"
+vcbot_15: "Please specify a song name or reply to a video file !"
+cha_4: "Source database cleared."
+asstcmd_4: "Done Command : `/{}` saved."
+mdi_1: "More Explained Info"
+schdl_2: "`Incorrect Format`"
+help_calculator: "-\n\n•`{i}calc` - Inline Calculator"
+help_6: "••Voice Chat"
+vct_3: "`Inviting Members to Voice Chat...`"
+pmbot_1: "**You need to join below chat(s) in order to chat with my master!\n\n**"
+grt_4: "`No welcome was set!`"
+nightm_4: "Done, Removed Current Chat from Night Mode"
+nightm_2: "Setted time successfully"
+ex_1: "`Reply to message..`"
+blk_6: "No Blacklist word Found Here"
+cha_6: "Source channel is already removed from database."
+vcbot_13: "`Resumed playback in this chat.`"
+fsub_5: "Unmute Me"
+games_2: "Choose Category!"
+games_1: "Choose The Game 🎮"
+eod_2: "• **Events for {}/2022**"
+wrd_8: "No Antonyms found!!\n\n`{}`"
+help_greetings: "-\n\n---- Welcomes ----\n• `{i}setwelcome <message/reply to message>`\n    Set welcome message in the current chat.\n\n• `{i}clearwelcome`\n    Delete the welcome in the current chat.\n\n• `{i}getwelcome`\n    Get the welcome message in the current chat.\n\n---- GoodByes ----\n• `{i}setgoodbye <message/reply to message>`\n    Set goodbye message in the current chat.\n\n• `{i}cleargoodbye`\n    Delete the goodbye in the current chat.\n\n• `{i}getgoodbye`\n    Get the goodbye message in the current chat.\n\n• `{i}thankmembers on/off`\n    Send a thank you sticker on hitting a members count of 100*x in your groups."
+spcltool_5: "Downloaded Successfully, Now Adding Your Audio to video"
+spcltool_6: "`Put input in dd/mm/yyyy format`"
+clan_4: "`No Chat Added`"
+help_stickertools: "-\n\n• `{i}destroy <reply to animated sticker>`\n    To destroy the sticker.\n\n• `{i}tiny <reply to media>`\n    To create Tiny stickers.\n\n• `{i}kang <reply to image/sticker>`\n    Kang the sticker (add to your pack).\n\n• `{i}packkang <pack name>`\n    Kang the Complete sticker set (with custom name).\n\n• `{i}round <reply to any media>`\n    To extract round sticker."
+vcbot_9: "Are You Kidding Me?\nWhat to Play?"
+help_locks: "-\n\n• `{i}lock <msgs/media/sticker/gif/games/inline/polls/invites/pin/changeinfo>`\n    Lock the Used Setting in Used Group.\n\n• `{i}unlock <msgs/media/sticker/gif/games/inline/polls/invites/pin/changeinfo>`\n    UNLOCK the Used Setting in Used Group."
+pmbot_5: "Please reply to someone to Unban him."
+dm_4: "Error : {}\nRead Usage : `{}help other`"
+devs_3: "`Give Some C++ Code..`"
+help_polls: "-\n\n• `{i}poll <question> ; <option> ; <option>`\n    Get the Anonymous Poll with Given Options\n\n• `{i}poll <question> ; <option> ; <option> | <type>`\n    Get the poll specified with desired type!\n    type should be any of  `public`,  `multiple` or `quiz`\n\n• `{i}poll <question> ; <option> ; <option> | quiz_<answerno>`\n    Get the quiz poll where answerno is the number of option which is correct"
+fsub_1: "Give Channel where you want User to Join !"
+help_cleanaction: "-\n\n•`{i}addclean`\n    Clean all Upcoming action msg in added chat like someone joined/left/pin etc.\n\n•`{i}remclean`\n    Remove chat from database.\n\n•`{i}listclean`\n   To get list of all chats where its activated."
+vct_2: "**Successfully Changed VC Title to** `{}`"
+fgn_1: "**Available Fonts**"
+sts_10: "`Reply to any media...`"
+udl_7: "`You can't do that!`"
+udl_5: "`You forgot to give link :(`"
+snip_2: "Give the word to remove..."
+help_misc: "-\n\n• `{i}eod`\n    `Get Event of the Today`\n\n• `{i}pntrst <link/id>`\n    Download and send pinterest pins\n\n• `{i}gadget <search query>`\n    Gadget Search from Telegram.\n\n• `{i}randomuser`\n   Generate details about a random user.\n\n• `{i}ascii <reply image>`\n    Convert replied image into html."
+usage_simple: "**Total Disk Space**: `{}`\n**Used**: `{}`\n**Free**: `{}`\n\n**📊 Data Usage 📊**\n**Upload**: `{}`\n**Down**: `{}`\n\n**CPU**: `{}%`\n**RAM**: `{}%`\n**DISK**: `{}%`"
+grt_3: "`Reply to message which u want to set as welcome`"
+glitch_1: "`Glitching...`"
+userlogs_3: "Leave Chat"
+antiflood_3: "`You have been muted.`"
+echo_1: "**Activated Echo For Users:**"
+help_database: "-\n\n• **DataBase Commands, do not use if you don't know what it is.**\n\n• `{i}setdb key | value`\n    Set Value in Database.\n    e.g :\n    `{i}setdb hi there`\n    `{i}setdb hi there | ultroid here`\n    `{i}setdb --extend variable value` or `{i}setdb -e variable value` to add the value to the exiting values in db.\n\n• `{i}deldb key`\n    Delete Key from DB.\n\n• `{i}rendb old keyname | new keyname`\n    Update Key Name"
+help_admintools: "-\n\n• `.promote <reply to user/userid/username>`\n• `.demote`\n    Promote/Demote the user in the chat.\n\n• `.ban <reply to user/userid/username> <reason>`\n• `.unban`\n    Ban/Unban the user from the chat.\n\n• `.kick <reply to user/userid/username> <reason>`\n    Kick the user from the chat.\n\n• `.pin <reply to message>`\n    Pin the message in the chat\n• `.tpin <time> <temp pin message>`\n• `.unpin (all) <reply to message>`\n    Unpin the messages in the chat.\n\n• `.pinned`\n   Get pinned message in the current chat.\n• `.listpinned`\n   Get all pinned messages in current chat\n\n• `.autodelete <24h/7d/1m/off>`\n   Enable Auto Delete Messages in Chat.\n\n• `.purge <reply to message>`\n    Purge all messages from the replied message.\n\n• `.purgeme <reply to message>`\n    Purge Only your messages from the replied message.\n\n• `.purgeall`\n    Delete all msgs of replied user."
+help_4: "• Plugins"
+vcbot_3: "• Volume Changed to `{}%` •"
+pmbot_3: "User is already banned!"
+blk_5: "Blacklist Found In This Chats Are :"
+devs_2: "`Give some python cmd`"
+vcbot_16: "Chat is Not in Vc Auth list..."
+audiotools_10: "`Extracted Audio from Video...`"
+sudo_4: "`Bots can't be added as Sudo Users.`"
+fsub_6: "Please Join That Channel !\nThen Click This Button !"
+unban_1: "`Reply to a user or give username to unban him!`"
+devs_1: "`No cmd given`"
+udl_6: "`This Directory is Empty.`"
+vcbot_19: "Already Authed This Chat!"
+help_echo: "•`{i}addecho <reply to anyone>`\n   Start Auto Echo message of Replied user.\n\n•`{i}remecho <reply to anyone>`\n   Turn It off\n\n•`{i}listecho <reply to anyone>`\n   To Get list."
+help_mediatools: "-\n\n• `{i}mediainfo <reply to media>`\n   To get info about it.\n\n• `{i}rotate <degree/angle> <reply to media>`\n   Rotate any video/photo/media..\n   Note : for video it should be angle of 90's"
+youtube_5: "Give me a (youtube) search query to download audio from!"
+srch_1: "`Search for whom? Give me a user name!!`"
+bd_8: "`Removing...`"
+fsh_1: "**List of files stored.:**"
+games_6: "**• Starting Quiz in 5 secs.** \n**• Level :** {}\n**• Qs :** {}"
+upd_7: "`Fast Soft Updating...`"
+pinned_2: "Pinned Message in Current chat is [here]({})."
+com_7: "`Something Went Wrong.`"
+kick_2: "`Sorry, but I can't Kick my Developer`😂"
+sts_4: "`Reply to Non Animated Sticker.`"
+pmbot_2: "Please reply to someone to ban him."
+help_pmpermit: "-\n\n• `{i}a` or `{i}approve`\n    Approve someone to PM.\n\n• `{i}da` or `{i}disapprove`\n    Disapprove someone to PM.\n\n• `{i}block`\n    Block someone.\n\n• `{i}unblock` | `{i}unblock all`\n    Unblock someone.\n\n• `{i}nologpm`\n    Stop logging messages from the user.\n\n• `{i}logpm`\n    Start logging messages from the user.\n\n• `{i}startarchive`\n    Archive new PMs.\n\n• `{i}stoparchive`\n    Don't archive new PMs.\n\n• `{i}cleararchive`\n    Unarchive all chats.\n\n• `{i}listapproved`\n   List all approved PMs."
+wrd_6: "Antonyms"
+notes_1: "`Use this Command with Reply and word to use a note.`"
+sts_11: "Kanging this Sticker..."
+spcltool_9: "Found Nothing"
+help_12: "Voice Chat Bot is not active! Use .setdb VCBOT True to enable!"
+whs_3: "Failed to Identify song :("
+fsh_2: "**File has been stored!**\n\n**Shareable link:** {}"
+de_2: "{} `is no longer an admin in {}`"
+pinned_1: "No Pinned Message Found!"
+help_fedutils: "-\n\n• `{i}superfban <reply to user/userid/username>`\n    FBan the person across all feds in which you are admin.\n\n• `{i}superunfban <reply to user/userid/username>`\n    Un-FBan the person across all feds in which you are admin.\n\nSpecify FBan Group and Feds to exclude in the assistant.\n\n• `{i}fstat <username/id/reply to user>`\n    Collect fed stat of the person in Rose.\n\n• `{i}fedinfo <(fedid)>`\n    Collect federation info of the given fed id, or of the fed you own, from Rose."
+userlogs_5: "Left `{}`"
+help_other: "-\n\n• `{i}send <username/id> <reply/type>`\n    send message to User/Chat.\n\n• `{i}fwdreply <reply to msg>`\n    Reply to someone's msg by forwarding it in private.\n\n• `{i}save <reply message>`\n    Save that replied msg to ur saved messages box.\n\n• `{i}fsave <reply message>`\n    Forward that replied msg to ur saved messages."
+cvt_8: "`Not A Readable File.`"
+unspl_1: "No Results Found !"
+help_warn: "•`{i}warn <reply to user> <reason>`\n    Gives Warn.\n\n•`{i}resetwarn <reply to user>`\n    To reset All Warns.\n\n•`{i}warns <reply to user>`\n   To Get List of Warnings of a user.\n\n•`{i}setwarn <warn count> | <ban/mute/kick>`\n   Set Number in warn count for warnings\n   After putting ' | ' mark put action like ban/mute/kick\n   Its Default 3 kick\n   Example : `setwarn 5 | mute`"
+chab_3: "**Total List Of AI Enabled Users In This Chat :**"
+com_4: "`UnSupported Media..`"
+adm_3: "`Provide a Time too..`"
+pin_1: "`Reply to a message to pin it!`"
+youtube_3: "Give me a (youtube) URL to download video from!"
+can_1: "#GBanned_User Joined.\n\n**User** : {}\n**Reason**: {}\n\n`User Banned.`"
+cha_1: "invalid Channel given"
+prof_2: "`Removed This Chat from Profanity Filtering!`"
+instu_3: "Enter Query to Search"
+vcbot_12: "`Muted playback in this chat.`"
+help_utilities: "-\n\n• `{i}kickme` : Leaves the group.\n\n• `{i}date` : Show Calender.\n\n• `{i}listreserved`\n    List all usernames (channels/groups) you own.\n\n• `{i}stats` : See your profile stats.\n\n• `{i}paste` - `Include long text / Reply to text file.`\n\n• `{i}info <username/userid/chatid>`\n    Reply to someone's msg.\n\n• `{i}invite <username/userid>`\n    Add user to the chat.\n\n• `{i}rmbg <reply to pic>`\n    Remove background from that picture.\n\n• `{i}telegraph <reply to media/text>`\n    Upload media/text to telegraph.\n\n• `{i}json <reply to msg>`\n    Get the json encoding of the message.\n\n• `{i}suggest <reply to message> or <poll title>`\n    Create a Yes/No poll for the replied suggestion.\n\n• `{i}ipinfo <ipAddress>` : Get info about that IP address.\n\n• `{i}cpy <reply to message>`\n   Copy the replied message, with formatting. Expires in 24hrs.\n• `{i}pst`\n   Paste the copied message, with formatting.\n\n• `{i}thumb <reply file>` : Download the thumbnail of the replied file.\n\n• `{i}getmsg <message link>`\n  Get messages from chats with forward/copy restrictions."
+notes_2: "Done Note : `#{}` saved."
+clst_5: "Done!"
+vcbot_7: "`Keep patience... It'll take some time.`"
+help_sudo: "-\n\n• `{i}addsudo`\n    Add Sudo Users by replying to user or using <space> separated userid(s)\n\n• `{i}delsudo`\n    Remove Sudo Users by replying to user or using <space> separated userid(s)\n\n• `{i}listsudo`\n    List all sudo users."
+spcltool_8: "Give something to search.."
+help_fontgen: "• `{i}font <font name> : <text>`\n    Generate different fonts for the text.\n\n• `{i}font`\n    To get list of fonts"
+grt_1: "`Welcome note saved`"
+userlogs_2: "Add me to Your Tag Logger Chat to Log Tags"
+help_schedulemsg: "-\n\n•`{i}schedule <text/reply to msg> <time>`\n    In time u can use second as number, or like 1h or 1m\n    eg. `{i}schedule Hello 100` It deliver msg after 100 sec.\n    eg. `{i}schedule Hello 1h` It deliver msg after an hour."
+vct_5: "`Invited {} users`"
+sts_13: "`Switching to Pack {} due to insufficient space`"
+ban_1: "`Reply to a user or give username to ban him!`"
+zip_3: "`Reply to zip file only`"
+audiotools_3: "`Give time in format to trim`"
+dm_3: "⚜️ Message Delivered! ⚜️"
+cmda: "✘ Commands Available"
+blk_4: "Done : `{}` Removed from Blacklist."
+ban_3: "`I don't have the right to ban a user.`"
+games_5: "Choose Time Interval..."
+games_3: "Choose Difficulty Level"
+help_imagetools: "-\n\n• `{i}border <reply to photo/sticker>`\n    To create border around that media..\n    Ex - `{i}border 12,22,23`\n       - `{i}border 12,22,23 ; width (in number)`\n\n• `{i}grey <reply to any media>`\n    To make it black nd white.\n\n• `{i}color <reply to any Black nd White media>`\n    To make it Colorfull.\n\n• `{i}toon <reply to any media>`\n    To make it toon.\n\n• `{i}danger <reply to any media>`\n    To make it look Danger.\n\n• `{i}negative <reply to any media>`\n    To make negative image.\n\n• `{i}blur <reply to any media>`\n    To make it blurry.\n\n• `{i}quad <reply to any media>`\n    create a Vortex.\n\n• `{i}mirror <reply to any media>`\n    To create mirror pic.\n\n• `{i}flip <reply to any media>`\n    To make it flip.\n\n• `{i}sketch <reply to any media>`\n    To draw its sketch.\n\n• `{i}blue <reply to any media>`\n    just cool.\n\n• `{i}csample <color name /color code>`\n   example : `{i}csample red`\n             `{i}csample #ffffff`\n\n• `{i}pixelator <reply image>`\n    Create a Pixelated Image.."
+fsub_2: "Give Correct Channel Username or id"
+help_fakeaction: "-\n\n• `{i}ftyping <time/in secs>`\n    `Show Fake Typing in current chat.`\n\n• `{i}faudio <time/in secs>`\n    `Show Fake Recording Action in current chat.`\n\n• `{i}fvideo <time/in secs>`\n    `Show Fake video action in current chat.`\n\n• `{i}fgame <time/in secs>`\n    `Show Fake Game Playing Action in current chat.`\n\n• `{i}fsticker <time/in secs>`\n    `Show Fake sticker choosing Action in current chat.`\n\n• `{i}flocation <time/in secs>`\n    `Show Fake location Action in current chat.`\n\n• `{i}fcontact <time/in secs>`\n    `Show Fake contact choosing Action in current chat.`\n\n• `{i}fround <time/in secs>`\n    `Show Fake video message action in current chat.`\n\n• `{i}fphoto <time/in secs>`\n    `Show Fake sending photo in current chat.`\n\n• `{i}fdocument <time/in secs>`\n    `Show Fake sending document in current chat.`"
+help_9: "Settings ⚙️"
+help_converter: "-\n\n• `{i}convert <gif/img/sticker/webm>`\n    Reply to media to convert it into gif / image / webm / normal sticker.\n\n• `{i}doc <filename.ext>`\n    Reply to a text msg to save it in a file.\n\n• `{i}open`\n    Reply to a file to reveal it's text.\n\n• `{i}rename <file name with extension>`\n    Rename the file\n\n• `{i}thumbnail <reply to image/thumbnail file>`\n    Upload Your file with your custom thumbnail."
+vcbot_21: "• Nothing in queue!"
+help_10: "••Cʟᴏꜱᴇ••"
+prof_1: "`Added This Chat for Profanity Filtering!`"
+vcbot_6: "You haven't connected to a voice chat!"
+dm_6: "`No message found to deliver :(`"
+help_core: "-\n\n• `{i}install <reply to plugin>`\n    To install the plugin,\n  `{i}install f`\n    To force Install.\n\n• `{i}uninstall <plugin name>`\n    To unload and remove the plugin.\n\n• `{i}load <plugin name>`\n    To load unloaded unofficial plugin.\n\n• `{i}unload <plugin name>`\n    To unload unofficial plugin.\n\n• `{i}help <plugin name>`\n    Shows you a help menu (like this) for every plugin.\n\n• `{i}getaddons <raw link to code>`\n    Load Plugins from the given raw link."
+help_videotools: "-\n\n•`{i}sample <duration in seconds>`\n   Creates Short sample of video..\n\n• `{i}vshots <number of shots>`\n   Creates screenshot of video..\n\n• `{i}vtrim <start time> - <end time> in seconds`\n    Crop a Lengthy video.."
+unban_2: "`I don't have the right to unban a user.`"
+help_11: "Plugin Name-{}\n✘ Commands Available -"
+aki_2: "Start Game"
+cha_3: "Source channel already added"
+games_4: "Choose Number of Questions.."
+antiflood_5: "`Flood limit for this chat is {}.`"
+help_filter: "-\n\n• `{i}addfilter <word><reply to a message>`\n    add the used word as filter relating to replied message.\n\n• `{i}remfilter <word>`\n    Remove the filtered user..\n\n• `{i}listfilter`\n    list all filters."
+unpin_1: "Either reply to a message, or, use `{}unpin all`"
+snip_1: "Give word to set as snip and reply to a message."
+instu_4: "Success"
+clst_3: "■ Generating Changelogs..."
+calc_2: "Open Calculator Again"
+wbs_2: "Invalid URL!"
+sudo_2: "You cant add yourself as Sudo User..."
+sudo_3: "`No SUDO User was assigned ...`"
+help_extra: "-\n\n• `{i}del <reply to message>`\n    Delete the replied message.\n\n• `{i}edit <new message>`\n    Edit your last message or replied msg.\n\n• `{i}copy <reply to message>`\n    Copy replied message / media.\n\n• `{i}reply`\n    Reply the last sent msg to replied user."
+srch_3: "`Song not found...`"
+spcltool_2: "`Done.. Now reply to video In which u want to add this Audio`"
+blk_2: "Done : `{}` Blacklisted here."
+audiotools_9: "`No Audio Found...`"
+instu_1: "App search. Enter app name!"
+com_3: "`Invalid Input`"
+pro_1: "`Reply to a user to promote him!`"
+wbs_3: "**WebShot Generated**\n**URL**: {}"
+inline_9: "You Are Already On Latest Version"
+vcbot_18: "• Vc Auth List is Empty.."
+audiotools_2: "Downloaded Successfully, Now Converting to voice"
+clan_3: "`Invalid ID`"
+spcltool_1: "Reply To Audio or video"
+help_ziptools: "• `{i}zip <reply to file>`\n    zip the replied file\n    To set password on zip: `{i}zip <password>` reply to file\n\n• `{i}unzip <reply to zip file>`\n    unzip the replied file.\n\n• `{i}azip <reply to file>`\n   add file to batch for batch upload zip\n\n• `{i}dozip`\n   upload batch zip the files u added from `{i}azip`\n   To set Password: `{i}dozip <password>`"
+help_devtools: "-\n\n• `{i}bash <cmds>`\n• `{i}bash -c <cmds>` Carbon image as command output.\n    Run linux commands on telegram.\n\n• `{i}eval <code>`\n    Evaluate python commands on telegram.\n    Shortcuts:\n        client = bot = event.client\n        e = event\n        p = print\n        reply = await event.get_reply_message()\n        chat = event.chat_id\n\n• `{i}cpp <code>`\n    Run c++ code from Telegram.\n\n• `{i}sysinfo`\n    Shows System Info."
+cvt_6: "Added [This]({}) As Your Custom Thumbnail"
+inline_8: "Click the below button to update!"
+notes_5: "No Notes Found Here"
+help_beautify: "-\n\n• `{i}carbon <text/reply to msg/reply to document>`\n    Carbonise the text with default settings.\n\n• `{i}rcarbon <text/reply to msg/reply to document>`\n    Carbonise the text, with random bg colours.\n\n• `{i}ccarbon <color ><text/reply to msg/reply to document>`\n    Carbonise the text, with custom bg colours.\n\n• `{i}rayso <opt-theme> <text>/<reply to message>`\n  `{i}rayso list` - `Get list of themes.`"
+grt_7: "`Reply to message which u want to set as goodbye`"
+sts_1: "`You haven't written any article, Waifu is going away.`"
+eod_1: "🎊 **Events of the Day**"
+asstcmd_2: "`Give me the command which you want to remove.`"
+help_chats: "-\n\n• `{i}delchat <optional- username/id>`\n    Delete the group this cmd is used in.\n\n• `{i}getlink`\n• `{i}getlink r` - `create link with admin approval`\n• `{i}getlink r title_here` - `admin approval with link title`\n• `{i}getlink 10` - `usage limit in new link`\n    Get link of group this cmd is used in.\n\n• `{i}create (g|b|c) <group_name> ; <optional-username>`\n    Create group woth a specific name.\n    g - megagroup/supergroup\n    b - small group\n    c - channel\n\n• `{i}setgpic <reply to Photo><chat username>`\n    Set Profile photo of Group.\n\n• `{i}delgpic <chat username -optional>`\n    Delete Profile photo of Group.\n\n• `{i}unbanall`\n    Unban all Members of a group.\n\n• `{i}rmusers`\n    Remove users specifically."
+fsh_3: "`Reply to a message to make a shareable link!`"
+audiotools_1: "Reply To Audio or video.."
+help_channelhacks: "🔹 `{i}shift <from channel> | <to channel>`\n     This will transfer all old post from channel A to channel B.\n      (u can use username or id of channel too)\n      example : `{i}shift @abc | @xyz`\n      [note - this (' | ') sign is nessesary]\n\n🔹 For auto-posting/forwarding all new message from any source channel to any destination channel.\n\n   `{i}asource <channel username or id>`\n      This add source channel to database\n   `{i}dsource <channel username or id>`\n      This remove source channels from database\n   `{i}listsource <channel username or id>`\n      Show list of source channels\n\n\n   `{i}adest <channel username or id>`\n      This add Ur channels to database\n   `{i}ddest <channel username or id>`\n      This Remove Ur channels from database\n   `{i}listdest <channel username or id>`\n      Show List of Ur channels\n\n   'you can set many channels in database'\n   'For activating auto-post use `{i}setdb AUTOPOST True` '"
+help_asstcmd: "-\n\n•`{i}addcmd <new cmd> <reply>`\n   It will set new cmd for your assistant bot with that reply message.\n\n•`{i}remcmd <cmd name>`\n   It will remove your cmd.\n\n•`{i}listcmd`\n   To Get list of all your custom cmd."
+vcbot_8: "Give only youtube playlist"
+asstcmd_3: "Done Command: `/{}` Removed."
+carbon_3: "`Give Custom Color to Create Carbon...`"
+spcltool_3: "Reply To video"
+chab_2: "`No user has AI added.`"
+help_search: "-\n\n• `{i}saavn <search query>`\n    Download songs from Saavn.\n\n• `{i}google <query>`\n    For doing google search.\n\n• `{i}github <username>`\n    Get full information of the users github profile.\n\n• `{i}img <query>`\n  `{i}img <query> ; <no of results>`\n    For doing Images search.\n\n• `{i}reverse`\n    Reply an Image or sticker to find its sauce."
+de_1: "`Reply to a user to demote him!`"
+clan_5: "Clean Actions are already enabled in this Chat."
+flr_1: "`Use this command word to set as filter and reply...`"
+pmbot_7: "`Congrats! You have been unbanned.`"
+ban_2: "`Sorry, but I can't Ban my Developer 😂`"
+help_notes: "-\n\n• `{i}addnote <word><reply to a message>`\n    add note in the used chat with replied message and choosen word.\n\n• `{i}remnote <word>`\n    Remove the note from used chat.\n\n• `{i}listnote`\n    list all notes.\n\n• Use :\n   set notes in group so all can use it.\n   type `#(Keyword of note)` to get it"
+fsub_3: "ForceSub was not Active in this Chat !"
+notes_3: "`Give me the note handler which you want to remove.`"
+youtube_1: "Give me a (youtube) URL to download audio from!"
+userlogs_1: "The Chat Id You Set In Tag Logger Is Wrong , Please Correct It"
+help_qrcode: "-\n\n• `{i}qrcode <text/reply to text>`\n   `Makes qrcode of text`\n\n• `{i}addqr <reply image> <text>`\n   `Makes qr of text and add it to image.`\n\n• `{i}qrdecode <reply to qrcode>`\n   `It decodes the qrcode.`"
+flr_3: "`Give the filter to remove..`"
+asstcmd_1: "`Use this Command with Reply and word to use a command.`"
+purgeall_2: "Successfully Purged All Messages from {}"
+tban_2: "`Successfully Banned` {} `in {} for {}`"
+bot_5: "• `Restarting...`"
+sf_23: "**Error**\n `Unblock` @MissRose_Bot `and try again!"
+grt_2: "Please use this in a group and not PMs!"
+vcbot_20: "`Downloading and converting...`"
+vcbot_11: "`Getting Voice Chat Bot Users List...`"
+help_tag: "-\n\n• `{i}tagall`\n    Tag Top 100 Members of chat.\n\n• `{i}tagadmins`\n    Tag Admins of that chat.\n\n• `{i}tagowner`\n    Tag Owner of that chat\n\n• `{i}tagbots`\n    Tag Bots of that chat.\n\n• `{i}tagrec`\n    Tag recently Active Members.\n\n• `{i}tagon`\n    Tag online Members(work only if privacy off).\n\n• `{i}tagoff`\n    Tag Offline Members(work only if privacy off)."
+dm_2: "`Give text to send or reply to msg`"
+spcltool_7: "`Happy Birthday To U🎉🎊`"
+sudo_1: "`Reply to a msg or add it's id/username.`"
+flr_5: "Done : Filter `{}` Removed."
+vcbot_17: "`Reply to user's msg or add it's id/username...`"
+sts_8: "`Failed to add sticker, use` @Stickers `bot to add the sticker manually.`"
+audiotools_6: "`Wrong trim duration`"
+act_1: "AUTOCORRECT Feature ON"
+unban_3: "{} **was unbanned by** {} **in** `{}`"
+bd_7: "Removed from database"
+help_unsplash: "-\n\n• {i}unsplash <search query> ; <no of pics>\n    Unsplash Image Search."
+sts_3: "**Please select from {} **"
+help_profile: "-\n\n• `{i}setname <first name // last name>`\n    Change your profile name.\n\n• `{i}setbio <bio>`\n    Change your profile bio.\n\n• `{i}setpic <reply to pic>`\n    Change your profile pic.\n\n• `{i}delpfp <n>(optional)`\n    Delete one profile pic, if no value given, else delete n number of pics.\n\n• `{i}poto <username>`\n    Upload the photo of Chat/User if Available."
+clst_2: "`Successfully Updated!\nRestarting, please wait...`"
+userlogs_4: "Your Assistant Bot Can't Send Messages in Tag Log Chat.\nAdd it to Get Your Tag Logs.."
+help_logo: "-\n\n• `{i}logo <text>`\n   Generate a logo of the given Text\n   Or Reply To image , to write ur text on it.\n   Or Reply To Font File, To write with that font."
+zip_2: "First add All Files Via `{}addzip` then doZip to zip all files at one."
+clan_2: "Removed Clean Action Setting For this Chat"
+youtube_4: "`Give A Direct Video Link To Download`"
+bd_9: "Channel is already removed from database."
+help_8: "⚙️ Owner Tools"
+fsub_7: "This Message is Not for You"
+clst_1: "`Userbot dyno build in progress, please wait for it to complete.`"
+help_specialtools: "-\n\n• `{i}wspr <username>`\n    Send secret message..\n\n• `{i}q <color-optional>`\n• `{i}q @username`\n• `{i}q r <color-optional>`\n• `{i}q count` : `multiple quotes`\n    Create quotes..\n\n• `{i}sticker <query>`\n    Search Stickers as Per ur Wish..\n\n• `{i}getaudio <reply to an audio>`\n    Download Audio To put in ur Desired Video/Gif.\n\n• `{i}addaudio <reply to Video/gif>`\n    It will put the above audio to the replied video/gif.\n\n• `{i}dob <date of birth>`\n    Put in dd/mm/yy Format only(eg .dob 01/01/1999).\n\n• `{i}wall <query>`\n    Search Hd Wallpaper as Per ur Wish.."
+zip_1: "Reply to any media/Document."
+inline_6: "**Voice Chat Help Menu for {}**\n**Available Commands:** `{}`\n\n@TeamUltroid"
+py_d2: "`Full Sudo User Required...`"
+ast_4: "List Of Available Languages."
+py_d8: "`Sending media or sticker is not allowed in this chat.`"
+py_d3: "`Use this in group/channel.`"
+py_d5: "`I am not an admin.`"
+py_d6: "This Command Can't be used by Bot!"
+py_c1: "Wrong string session. Copy paste correctly!"
+py_d4: "**⚠️ Developer Restricted!**\nIf you know what this does, and want to proceed, use\n`{}setdb I_DEV True`.\n\nThis Might Be Dangerous."
+py_d1: "`You cannot use this command now. Contact owner of this bot!`"
+py_c2: "No String Session found. Quitting..."
+py_c3: "Your VC_SESSION Expired. Deleting VC_SESSION from redis...\nRenew/Change it to Use Voice/Video Chat from VC Account..."
+py_d7: "Conversation Is Already On, Kindly Wait Sometime Then Try Again."
+# ────────────────────────────────────────────────────────────────
+# C7 — telegram-rich-rebrand localization keys.
+# Pragmatic coverage of the significant *reusable* UI texts the
+# rebrand (Waves 0-3) introduced: help/stats cards, buttonkit labels,
+# Stars/gift dashboards, the `.biz` wizard, `.story` tool, `.quiz`
+# polls, and generic rich-card scaffolding. Not exhaustive — log
+# lines, exception internals and one-off usage strings stay as
+# plain-text literals in the plugin source.
+# ────────────────────────────────────────────────────────────────
+
+# ui_card_* — help/stats card headers + generic card labels (D1/C1/C3/C4)
+ui_card_help_menu: "Ultroid Help Menu"  # auto
+ui_card_stats_title: "📊 Stats"  # auto
+ui_card_plugins_label: "Plugins"  # auto
+ui_card_addons_label: "Addons"  # auto
+ui_card_commands_label: "Commands"  # auto
+ui_card_no_data: "No data available."  # auto
+ui_card_processing: "Processing…"  # auto
+ui_card_ready: "Ready"  # auto
+ui_card_error: "Error"  # auto
+
+# btn_* — button labels consumed by pyUltroid/_core/buttonkit.py callers
+btn_repo: "• Repo •"  # auto
+btn_support: "• Support •"  # auto
+btn_back: "« Bᴀᴄᴋ"  # auto
+btn_back_page: "« Bᴀᴄᴋ »"  # auto
+btn_previous: "« Pʀᴇᴠɪᴏᴜs"  # auto
+btn_next: "Nᴇxᴛ »"  # auto
+btn_ready: "✅ Ready"  # auto
+btn_update_now: "• Uᴘᴅᴀᴛᴇ Nᴏᴡ •"  # auto
+btn_open_again: "Oᴘᴇɴ Aɢᴀɪɴ"  # auto
+btn_send_plugin: "« Sᴇɴᴅ Pʟᴜɢɪɴ »"  # auto
+btn_manager_help: "• Manager Help •"  # auto
+btn_confirm: "✅ Confirm"  # auto
+btn_cancel: "⚠️ Cancel"  # auto
+btn_ok: "ℹ️ OK"  # auto
+btn_buy_premiumbot: "Buy via @PremiumBot"  # auto
+
+# stars_* — Stars wallet/top-up/revenue dashboards (D6/B1/B2) + gift
+# catalog/wrapper UI (B3, plugins/gifts.py) sharing the same family.
+stars_col_date: "Date"  # auto
+stars_col_delta: "Δ Stars"  # auto
+stars_col_from_to: "From/To"  # auto
+stars_col_note: "Note"  # auto
+stars_col_stars: "Stars"  # auto
+stars_col_price: "Price"  # auto
+stars_col_field: "Field"  # auto
+stars_col_value: "Value"  # auto
+stars_no_transactions: "No transactions yet."  # auto
+stars_wallet_header: "⭐ Stars Wallet — {}"  # auto
+stars_balance_label: "Balance: **{} XTR**"  # auto
+stars_recent_tx_caption: "Recent transactions"  # auto
+stars_topup_header: "⭐ Stars Top-up Options"  # auto
+stars_topup_info: "Informational only — this userbot cannot complete an in-app purchase. Use Telegram's own Stars purchase flow (Settings → Telegram Stars → Buy) or @PremiumBot."  # auto
+stars_topup_caption: "Available packages"  # auto
+stars_revenue_header: "📊 Stars Revenue — {}"  # auto
+stars_current_balance: "Current balance"  # auto
+stars_available_balance: "Available balance"  # auto
+stars_overall_revenue: "Overall revenue"  # auto
+stars_withdrawal_enabled: "Withdrawal enabled"  # auto
+stars_usd_rate: "USD rate"  # auto
+stars_revenue_caption: "Revenue status"  # auto
+stars_gift_catalog_header: "⭐ Star Gift Catalog"  # auto
+stars_gift_saved_header: "🎁 Saved Star Gifts"  # auto
+stars_gift_col_id: "ID"  # auto
+stars_gift_col_avail: "Avail"  # auto
+stars_gift_col_flags: "Flags"  # auto
+stars_gift_none_available: "`No star gifts available right now.`"  # auto
+stars_gift_sent: "✅ Sent **Star Gift #{}** to **{}**."  # auto
+stars_gift_working: "Working on it…"  # auto
+stars_gift_cancelled: "Cancelled."  # auto
+
+# biz_* — `.biz` Telegram Business wizard (D7/B8, plugins/business.py)
+biz_title_overview: "💼 Telegram Business"  # auto
+biz_title_premium_required: "⭐ Telegram Premium Required"  # auto
+biz_title_feature_unavailable: "⚠️ Feature Unavailable"  # auto
+biz_title_error: "❌ Error"  # auto
+biz_title_greeting: "👋 Greeting Message"  # auto
+biz_title_away: "🌙 Away Message"  # auto
+biz_title_intro: "🎬 Business Intro"  # auto
+biz_title_location: "📍 Business Location"  # auto
+biz_title_hours: "🕒 Work Hours"  # auto
+biz_title_links: "🔗 Business Chat Links"  # auto
+biz_premium_only_note: "Business features are Premium-only (server-enforced)."  # auto
+biz_greeting_disabled: "Greeting message disabled."  # auto
+biz_away_disabled: "Away message disabled."  # auto
+biz_intro_removed: "Business intro removed."  # auto
+biz_location_cleared: "Business location cleared."  # auto
+biz_hours_cleared: "Work hours cleared."  # auto
+
+# story_* — `.story`/`.storydel`/`.stealth` (D8/A9, plugins/storytools.py)
+story_posted: "✅ **Story posted**{} — period `{}h`."  # auto
+story_deleted: "✅ **Deleted {} story/stories.**"  # auto
+story_stealth_on: "✅ **Stealth mode activated** — recent story views are hidden."  # auto
+story_error_generic: "❌ **Error.**\n`{}`"  # auto
+story_error_unavailable: "❌ **Story feature unavailable.**\n`{}`"  # auto
+story_error_failed: "❌ **Story request failed.**\n`{}`"  # auto
+story_premium_required: "⭐ **Telegram Premium required.**\n`{}`"  # auto
+story_reply_media_required: "`Reply to a photo/video (or attach one) to post it as a Story.`"  # auto
+
+# quiz_* — `.quiz` poll command (A4, plugins/utilities.py)
+quiz_usage: "`Usage: .quiz <question> | <opt1> | <opt2> ...`"  # auto
+quiz_need_options: "`Need at least 2 options, e.g. .quiz <question> | <opt1> | <opt2>`"  # auto
+quiz_not_supported: "`Oops, you can't send quiz polls here!\n\n{}`"  # auto
+
+# rich_* — generic rich-card scaffolding shared across D1 consumers
+rich_fallback_notice: "(rich card unavailable — showing plain text)"  # auto
+rich_no_data: "No data available."  # auto
+rich_cancelled: "Cancelled."  # auto
+rich_confirm_prompt: "Tap **Confirm**, or re-run this exact command with `confirm` appended."  # auto
+rich_working: "Working on it…"  # auto
