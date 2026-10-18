@@ -5,19 +5,119 @@ Full narrative: see docs/HANDBOOK.md (module narratives appendix)."""
 from __future__ import annotations
 
 import html as _html
-from dataclasses import dataclass, field
+import re as _re
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any
 
 __all__ = [
-    "ParseMode",
+    "EDIT_UNSUPPORTED",
+    "ErrorNotice",
+    "ErrorSeverity",
     "MessageBody",
     "NoticeEdit",
-    "ErrorSeverity",
-    "ErrorNotice",
+    "ParseMode",
     "as_text",
-    "EDIT_UNSUPPORTED",
+    "command_error_messages",
+    "error_caption",
+    "sanitize_error_text",
 ]
+
+
+_CREDENTIAL_ASSIGNMENT = _re.compile(
+    r"(?i)\b(api[_-]?(?:hash|id|key)|bot[_-]?token|token|session(?:[_-]?string)?|password|secret)\b(\s*[:=]\s*)(?:['\"]([^'\"]*)['\"]|([^\s,;]+))"
+)
+_TELEGRAM_TOKEN = _re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
+_BEARER = _re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/-]+=*")
+_MAPPING_CREDENTIAL = _re.compile(
+    r"(?i)(['\"](?:api[_-]?(?:hash|id|key)|bot[_-]?token|token|session(?:[_-]?string)?|password|secret)['\"]\s*:\s*)['\"][^'\"]*['\"]"
+)
+_SESSION_BLOCK = _re.compile(
+    r"(?is)(\b(?:session(?:[_ -]?string)?|string[_ -]?session)\b\s*[:=]\s*)(['\"]?)([A-Za-z0-9+/=_-]{48,})(['\"]?)"
+)
+
+
+def sanitize_error_text(value: Any) -> str:
+    """Redact registered secrets and recognizable credentials from diagnostic text."""
+    text = as_text(value)
+    try:
+        from ..webserver.security import REDACTOR
+
+        text = REDACTOR.redact(text)
+    except Exception:  # noqa: BLE001, S110 - failure notices must survive without logging credential-bearing exceptions
+        pass
+    text = _BEARER.sub(r"\1[REDACTED]", text)
+    text = _MAPPING_CREDENTIAL.sub(r"\1'[REDACTED]'", text)
+    text = _SESSION_BLOCK.sub(r"\1[REDACTED]", text)
+    text = _TELEGRAM_TOKEN.sub("[REDACTED]", text)
+    return _CREDENTIAL_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]", text
+    )
+
+
+def _utf16_length(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
+
+
+def _fit_preformatted(text: str, budget: int, *, marker: bool = False) -> str:
+    """Escape text into a complete HTML pre block within Telegram's UTF-16 limit."""
+    safe = sanitize_error_text(text)
+    suffix = "…" if marker else ""
+    opening, closing = "<pre>", "</pre>"
+    fixed = _utf16_length(opening + closing + suffix)
+    out = []
+    used = 0
+    consumed = 0
+    for char in safe:
+        escaped = _html.escape(char, quote=False)
+        width = _utf16_length(escaped)
+        if used + width + fixed > budget:
+            break
+        out.append(escaped)
+        used += width
+        consumed += 1
+    truncated = consumed < len(safe)
+    if truncated and not marker:
+        return _fit_preformatted(safe, budget, marker=True)
+    return opening + "".join(out) + ("…" if truncated else "") + closing
+
+
+def error_caption(error: Any, max_chars: int = 1000) -> str:
+    """Build a bounded image/log caption with escaped, sanitized exception text."""
+    prefix = "<b>Ultroid Client Error:</b>\n"
+    budget = max(0, max_chars - _utf16_length(prefix))
+    return prefix + _fit_preformatted(as_text(error), budget)
+
+
+def command_error_messages(trigger: Any, error: Any, link: Any = None) -> list[str]:
+    """Return HTML notices carrying all sanitized exception text in 4096-unit chunks."""
+    trigger_text = sanitize_error_text(as_text(trigger))
+    error_text = sanitize_error_text(as_text(error))
+    reference = (f'<a href="{_html.escape(as_text(link), quote=True)}">'
+                "[see in the logs channel]</a>" if link else "[see in the logs channel]")
+    prefix = "<b>Command failed</b>\n" + _fit_preformatted(trigger_text[:160], 300)
+    first_fixed = prefix + "\n<pre></pre>\n" + reference
+    first_budget = 4096 - _utf16_length(first_fixed)
+    chunks: list[str] = []
+    remaining = error_text
+    while remaining:
+        budget = first_budget if not chunks else 4096 - _utf16_length("<pre></pre>")
+        consumed = 0
+        encoded_text = ""
+        while consumed < len(remaining):
+            item = _html.escape(remaining[consumed], quote=False)
+            if _utf16_length(encoded_text + item) > budget:
+                break
+            encoded_text += item
+            consumed += 1
+        if not consumed:
+            raise ValueError("Telegram message budget cannot fit escaped character")
+        chunks.append(encoded_text)
+        remaining = remaining[consumed:]
+    if not chunks:
+        chunks = [""]
+    first = prefix + "\n<pre>" + chunks[0] + "</pre>\n" + reference
+    return [first] + ["<pre>" + chunk + "</pre>" for chunk in chunks[1:]]
 
 
 class ParseMode(str, Enum):
@@ -53,7 +153,7 @@ def as_text(value: Any) -> str:
 
     * a plain string - returned unchanged;
     * a ``(text, entities)`` tuple as produced by ``combine()`` in
-      ``pyUltroid/_core/entities.py`` and by the fork's rich-text handling -
+      ``custom/entities.py`` and by the fork's rich-text handling -
       only the text half is taken, because the caller asking for text cannot
       use the entities;
     * a Telethon object exposing ``.text`` (``TextWithEntities`` and friends).
@@ -280,9 +380,6 @@ class ErrorNotice:
             return cls(summary=f"Couldn't {what}", detail=fallback)
 
         tail = lines[-1].strip()
-        head = "".join(
-            f"  {ln.strip()}\n" for ln in lines if ln.strip().startswith("File ")
-        )
         name = tail.split(":", 1)[0].strip() if ":" in tail else tail
         severity = (
             ErrorSeverity.USER

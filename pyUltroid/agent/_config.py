@@ -379,16 +379,17 @@ class AgentConfig:
         return status
 
     def config_default_provider(self) -> str | None:
-        """The provider a bare ``.ai`` command uses, when one is pinned."""
+        """Resolve a provider pin, or configured apimix as the default."""
         value = self._read(DEFAULT_PROVIDER_KEY)
-        if not value:
-            return None
-        value = str(value).lower()
-        if value == "compat":
-            value = "openai_compat"
-        if value not in PROVIDERS:
-            return None
-        return value
+        if value:
+            value = str(value).lower()
+            if value == "compat":
+                value = "openai_compat"
+            if value in PROVIDERS:
+                return value
+        # A configured apimix account is the preferred route for unpinned
+        # .ai/.ask requests; a saved explicit provider choice still wins.
+        return "apimix" if self.config_ready("apimix") else None
 
     def config_use_default(
         self, provider: str | None, *, require_configured: bool = False

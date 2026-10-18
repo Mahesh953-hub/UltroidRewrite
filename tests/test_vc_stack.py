@@ -7,8 +7,8 @@ Covers:
   accepts it, while ``UltroidClient`` itself stays truthful.
 - ``vc/_youtube.py::YouTubeData``: the MusicService-conformant provider whose
   absence broke ``vc/_pytgcalls.py`` at import time (loader-known issue).
-- ``pyUltroid/_core/cards.py``: the now-playing/queue geometry constants that
-  were dropped in the caa96ab consolidation (silent NameError → None).
+- ``pyUltroid/_core/cards.py``: current high-resolution now-playing/queue
+  geometry and render paths.
 - ``vc/_pytgcalls.py::wire_call``: idempotent Call-singleton wiring used by
   the plugins/vctools.py command layer.
 
@@ -126,13 +126,10 @@ class TestPyTgCallsCompatClient:
 class TestCardGeometry:
     def test_geometry_constants_restored(self):
         cards = _import_cards()
-        assert cards._NP_WIDTH == 800
-        assert cards._NP_HEIGHT == 200
-        assert cards._THUMB_SIZE == 160
-        assert cards._THUMB_PAD == 20
-        assert cards._TEXT_X_OFFSET == 160 + 2 * 20 + 10
-        assert cards._PROGRESS_H == 8
-        assert cards._PROGRESS_Y == 200 - 46
+        assert cards._NP_WIDTH == 1600
+        assert cards._NP_HEIGHT == 640
+        assert cards._THUMB_SIZE == 456
+        assert cards._THUMB_PAD == 92
         assert cards._MAX_QUEUE == 10
         assert cards._OUT_DIR.name == "now_playing"
         assert cards._OUT_DIR.parent == cards._RESOURCE_ROOT
@@ -359,62 +356,66 @@ class TestVcToolsCommandRegistration:
         assert "vcunmute$" in recorded
 
 
-class TestSendCardOrText:
-    """_send_card_or_text must always remove the generated card file."""
+class TestV2NoticeDelivery:
+    """The current player sends escaped text notices with the fork's v2 mode."""
 
-    @staticmethod
-    def _event(send_side_effect=None):
-        client = SimpleNamespace(send_file=AsyncMock(side_effect=send_side_effect))
-        return SimpleNamespace(client=client, chat_id=123)
-
-    @staticmethod
-    def _msg():
-        return SimpleNamespace(edit=AsyncMock(), delete=AsyncMock())
-
-    def test_send_success_removes_card(self, vctools_stubbed, tmp_path):
+    def test_say_uses_v2_parse_mode_and_returns_send_result(self, vctools_stubbed):
         mod, _ = vctools_stubbed
-        card = tmp_path / "card.png"
-        card.write_bytes(b"png")
-        e, msg = self._event(), self._msg()
+        event = SimpleNamespace(eor=AsyncMock(return_value="sent"))
 
-        asyncio.run(mod._send_card_or_text(e, msg, str(card), "hello"))
+        result = asyncio.run(mod._say(event, "**Ready**"))
 
-        assert e.client.send_file.await_count == 1
-        assert msg.delete.await_count == 1
-        assert msg.edit.await_count == 0
-        assert not card.exists()
+        assert result == "sent"
+        event.eor.assert_awaited_once_with(
+            "**Ready**", time=None, parse_mode="v2"
+        )
 
-    def test_send_failure_falls_back_to_edit_and_still_removes(
-        self, vctools_stubbed, tmp_path
-    ):
+    def test_say_forwards_timeout_and_other_send_options(self, vctools_stubbed):
         mod, _ = vctools_stubbed
-        card = tmp_path / "card.png"
-        card.write_bytes(b"png")
-        e = self._event(send_side_effect=ValueError("send failed"))
-        msg = self._msg()
+        event = SimpleNamespace(eor=AsyncMock(return_value="sent"))
+        buttons = [[("Close", b"close")]]
 
-        asyncio.run(mod._send_card_or_text(e, msg, str(card), "hello"))
+        asyncio.run(
+            mod._say(event, "Notice", time=15, buttons=buttons, link_preview=False)
+        )
 
-        assert msg.edit.await_count == 1  # plain-text fallback happened
-        assert not card.exists()  # finally-block removal (review regression)
+        event.eor.assert_awaited_once_with(
+            "Notice",
+            time=15,
+            parse_mode="v2",
+            buttons=buttons,
+            link_preview=False,
+        )
 
-    def test_edit_failure_still_removes_card(self, vctools_stubbed, tmp_path):
+    def test_vnow_sends_hostile_metadata_through_v2(self, vctools_stubbed, monkeypatch):
+        from telethon.extensions.markdownv2 import Markdown
+
         mod, _ = vctools_stubbed
-        card = tmp_path / "card.png"
-        card.write_bytes(b"png")
-        e = self._event(send_side_effect=ValueError("send failed"))
-        msg = self._msg()
-        msg.edit.side_effect = ValueError("edit failed")
+        track = SimpleNamespace(
+            title="Tom & Jerry <live>",
+            artist="A & B",
+            duration=180,
+            is_live=False,
+            requester="Alice",
+            platform="YouTube",
+        )
+        player = SimpleNamespace(
+            current=track,
+            queue=[track],
+            loop=0,
+            position=lambda: 42,
+        )
+        monkeypatch.setattr(
+            mod,
+            "call",
+            SimpleNamespace(players=SimpleNamespace(get=lambda _chat_id: player)),
+        )
+        event = SimpleNamespace(chat_id=123, eor=AsyncMock(return_value="sent"))
 
-        with pytest.raises(ValueError, match="edit failed"):
-            asyncio.run(mod._send_card_or_text(e, msg, str(card), "hello"))
-        assert not card.exists()
+        asyncio.run(mod.vnow(event))
 
-    def test_no_card_edits_message(self, vctools_stubbed):
-        mod, _ = vctools_stubbed
-        e, msg = self._event(), self._msg()
-
-        asyncio.run(mod._send_card_or_text(e, msg, None, "hello"))
-
-        msg.edit.assert_awaited_once_with("hello")
-        assert e.client.send_file.await_count == 0
+        sent_text = event.eor.await_args.args[0]
+        assert event.eor.await_args.kwargs["parse_mode"] == "v2"
+        rendered, _entities = Markdown().parse(sent_text)
+        assert "Tom & Jerry <live>" in rendered
+        assert "A & B" in rendered

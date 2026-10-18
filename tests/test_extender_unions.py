@@ -32,6 +32,22 @@ def test_unions_expose_every_component():
     assert set(up.components()) == {"engine", "git"}
 
 
+def test_legacy_updater_imports_keep_the_full_shared_apis():
+    from pyUltroid.updater import git, up, updater
+
+    assert updater is up.engine
+    assert git is up.git
+    assert updater._git is git
+    assert all(
+        callable(getattr(updater, name))
+        for name in ("check", "apply", "status", "rollback")
+    )
+    assert all(
+        callable(getattr(git, name))
+        for name in ("current_sha", "current_branch", "fetch_diff", "rollback")
+    )
+
+
 def test_collaborators_are_shared_not_duplicated():
     """Two objects over the same state would drift."""
     from pyUltroid.tracer import tr

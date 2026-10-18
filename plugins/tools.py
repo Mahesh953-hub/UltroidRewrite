@@ -38,6 +38,8 @@ from . import *
 from . import HNDLR, LOGS, ULTConfig, con, eor, get_string
 from . import ultroid_cmd
 
+hb = fns.humanbytes
+
 
 def sanga_seperator(sanga_list):
     string = "".join(info[info.find("\n") + 1 :] for info in sanga_list)

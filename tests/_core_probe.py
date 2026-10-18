@@ -53,6 +53,7 @@ def load():
 
     # helper.py imports four formatters off `custom`, an optional dependency.
     custom = types.ModuleType("custom")
+    custom.__path__ = [str(ROOT / "custom")]
     for name in ("fmtbar", "fmtbyte", "fmtmsg", "fmtsec"):
         setattr(custom, name, lambda *a, **k: "")
     sys.modules["custom"] = custom

@@ -8,14 +8,12 @@ the attributes the plugin consumes, plus a fake client collecting handlers.
 from __future__ import annotations
 
 import asyncio
-import collections
 import logging
 import shutil
 import sys
 import types
 
 import pytest
-
 from conftest import ROOT
 
 
@@ -130,63 +128,62 @@ def test_handlers_registered(genai_module):
     assert names.count("callback") == 1
 
 
-def test_gemini_rotates_models_on_failure(genai_module, monkeypatch):
-    genai = genai_module.genai
-    fns = genai_module.mod.fns
-    calls = []
-
-    async def flaky(*args, **kwargs):
-        calls.append(kwargs.get("url", args[0] if args else ""))
-        if len(calls) == 1:
-            raise RuntimeError("boom")
-        return {"candidates": [{"content": {"parts": [{"text": "hi there"}]}}]}
-
-    monkeypatch.setattr(fns, "async_searcher", flaky)
-    genai.data.append({"role": "user", "parts": [{"text": "q"}]})
-    first = genai.models[0]
-    result = asyncio.run(genai.gemini())
-    assert result == "hi there"
-    assert genai.models[0] != first  # rotated past the failing model
-    assert genai.data[-1]["role"] == "model"
-
-
-def test_gemini_pops_history_on_empty_response(genai_module, monkeypatch):
-    genai = genai_module.genai
-    fns = genai_module.mod.fns
-
-    async def empty(*args, **kwargs):
-        return {"candidates": []}
-
-    monkeypatch.setattr(fns, "async_searcher", empty)
-    user_msg = {"role": "user", "parts": [{"text": "q"}]}
-    genai.data.append(user_msg)
-    result = asyncio.run(genai.gemini())
-    assert result == "**Error**:\n  `Empty Response`"
-    assert user_msg not in genai.data  # the empty exchange is not kept
-
-
-def test_history_is_bounded(genai_module):
-    genai = genai_module.genai
-    assert isinstance(genai.data, collections.deque)
-    assert genai.data.maxlen == 64
-
-
-def test_execute_without_key_answers_eod(genai_module, monkeypatch):
+def test_genai_request_uses_shared_runtime_and_edit_delivery(genai_module, monkeypatch):
     mod = genai_module.mod
-    # ``GenAI.api_key`` reads the agent config store; the no-key path is
-    # exercised by pinning the property to None for the duration.
-    monkeypatch.setattr(
-        type(mod.genai), "api_key", property(lambda self: None)
-    )
-    called = {}
+    seen = {}
+    class Response:
+        content = "runtime answer"
+        def __str__(self): return self.content
+    class Runtime:
+        async def runtime_run(self, request):
+            seen.update(prompt=request.prompt, chat_id=request.chat_id, origin=request.origin)
+            return Response()
+    monkeypatch.setattr(mod, "agent", lambda: Runtime())
+    class Message:
+        async def edit(self, text, **kw): self.text = text
+    class Event:
+        raw_text = "hello !?"
+        chat_id = 42
+        sender_id = 7
+        is_private = True
+        client = None
+        async def reply(self, text): return Message()
+        async def get_reply_message(self): return None
+    asyncio.run(mod.genai.execute(Event()))
+    assert seen == {"prompt": "hello", "chat_id": "genai:42:7", "origin": "genai"}
 
-    async def _eod(event, text=None, time=None, **kwargs):
-        called["text"] = text
 
-    monkeypatch.setattr(mod, "eod", _eod)
+def test_reply_context_and_ignore_suffix(genai_module, monkeypatch):
+    mod = genai_module.mod
+    seen = []
+    class Response:
+        content = "ok"
+        def __str__(self): return self.content
+    class Runtime:
+        async def runtime_run(self, req): seen.append(req.prompt); return Response()
+    monkeypatch.setattr(mod, "agent", lambda: Runtime())
+    class Msg:
+        async def edit(self, *a, **kw): pass
+    class Reply:
+        media = None
+        text = "quoted words"
+    class Event:
+        raw_text = "ask !?"
+        chat_id = 1; sender_id = 2; is_private = True; client = None
+        async def reply(self, text): return Msg()
+        async def get_reply_message(self): return Reply()
+    asyncio.run(mod.genai.execute(Event()))
+    assert "quoted words" in seen[-1]
+    Event.raw_text = "ask !? -i"
+    asyncio.run(mod.genai.execute(Event()))
+    assert seen[-1] == "ask"
 
-    class _Event:
-        raw_text = "hi !?"
 
-    asyncio.run(mod.genai.execute(_Event()))
-    assert "GEMINI_API_KEY" in called["text"]
+def test_clear_targets_shared_runtime_history(genai_module, monkeypatch):
+    mod = genai_module.mod
+    seen = []
+    class Runtime:
+        def clear_history(self, key): seen.append(key)
+    monkeypatch.setattr(mod, "agent", lambda: Runtime())
+    asyncio.run(mod.genai.clear(12, 3))
+    assert seen == ["genai:12:3"]

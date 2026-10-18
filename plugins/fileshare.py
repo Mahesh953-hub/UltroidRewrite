@@ -9,9 +9,10 @@ from . import get_help
 
 __doc__ = get_help("help_fileshare")
 
-from pyUltroid.dB import db as dbs
 import os
 
+from pyUltroid._core.events import InlineResultBuilder
+from pyUltroid.dB import db as dbs
 from pyUltroid.fns import fns
 
 from . import HNDLR, asst, get_string, in_pattern, udB, ultroid_bot, ultroid_cmd
@@ -86,10 +87,14 @@ async def file_short(event):
                 res.append(await event.builder.document(title=msg, file=message.media))
             elif message.text:
                 res.append(
-                    await event.builder.article(title=message.text, text=message.text)
+                    await InlineResultBuilder(event).article(
+                        title=message.text, text=message.text
+                    )
                 )
     if not res:
         title = "You have no stored file :("
         text = f"{title}\n\nRead `{HNDLR}help fileshare` to know how to store."
-        return await event.answer([await event.builder.article(title=title, text=text)])
+        return await event.answer(
+            [await InlineResultBuilder(event).article(title=title, text=text)]
+        )
     await event.answer(res, switch_pm="• File Store •", switch_pm_param="start")

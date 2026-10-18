@@ -452,12 +452,12 @@ class RuntimeMixin:
             return
 
         async def _apply():
-            from ..updater import updater as engine
+            from ..updater import up
 
-            diff = await engine.check()
+            diff = await up.check()
             if not (diff and diff.has_changes):
                 return False
-            state = await engine.apply(diff)
+            state = await up.apply(diff)
             return state.status == "done"
 
         try:

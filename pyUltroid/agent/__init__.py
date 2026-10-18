@@ -66,6 +66,7 @@ __all__ = [
     # the union and the process instance
     "Agent",
     "agent",
+    "registry",
     "miniai",
     "controls",
     "report_run",
@@ -197,3 +198,18 @@ def agent() -> Agent:
     if _AGENT is None:
         _AGENT = Agent()
     return _AGENT
+
+
+class _ProviderRegistryCompat:
+    """Legacy provider-registry calls forwarded to the process Agent."""
+
+    @staticmethod
+    def by_name(name: str) -> BaseProvider | None:
+        return agent().provider_by_name(name)
+
+    @staticmethod
+    def register(provider: BaseProvider) -> None:
+        agent().provider_register(provider)
+
+
+registry = _ProviderRegistryCompat()

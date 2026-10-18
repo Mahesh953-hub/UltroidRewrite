@@ -41,6 +41,7 @@ class TestDatabaseNoRuntimePip:
             import logging
 
             logger.LOGS = logging.getLogger("test-db")
+            startup.LOGS = logger.LOGS
             sys.modules["pyUltroid.startup"] = startup
             sys.modules["pyUltroid.startup.logger"] = logger
 

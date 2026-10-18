@@ -129,6 +129,7 @@ def test_updates_routes_supported_variants(monkeypatch, kind):
     if kind == "guest":
         update = object.__new__(UpdateBotGuestChatQuery)
         update.message = Message(
+            date=None,
             id=1, message="run", peer_id=PeerChat(3), from_id=PeerUser(OWNER)
         )
         update.answer = AsyncMock(return_value="result")
@@ -137,6 +138,7 @@ def test_updates_routes_supported_variants(monkeypatch, kind):
         update = object.__new__(UpdateBotNewBusinessMessage)
         update.connection_id = "c"
         update.message = Message(
+            date=None,
             id=4, message="code#", peer_id=PeerUser(1), from_id=PeerUser(OWNER)
         )
         update.respond = AsyncMock(
@@ -149,10 +151,12 @@ def test_updates_routes_supported_variants(monkeypatch, kind):
         update = object.__new__(UpdateBotNewBusinessMessage)
         update.connection_id = "c"
         update.message = Message(
+            date=None,
             id=1, message="👀", peer_id=PeerUser(1), from_id=PeerUser(OWNER)
         )
         update.reply_to_message = Message(
-            id=4, peer_id=PeerUser(42), media=MessageMediaPhoto(ttl_seconds=5)
+            date=None,
+            id=4, message=None, peer_id=PeerUser(42), media=MessageMediaPhoto(ttl_seconds=5)
         )
         client.download_media = AsyncMock(return_value="downloaded-file")
         client.send_file = AsyncMock()
@@ -160,7 +164,7 @@ def test_updates_routes_supported_variants(monkeypatch, kind):
     elif kind == "callback":
         update = object.__new__(UpdateBusinessBotCallbackQuery)
         update.user_id, update.connection_id, update.data = OWNER, "c", b"0"
-        update.message = Message(id=4, peer_id=PeerUser(1))
+        update.message = Message(id=4, date=None, message=None, peer_id=PeerUser(1))
         update.delete = AsyncMock()
 
     else:
@@ -199,6 +203,7 @@ def test_updates_ignores_non_owner_traffic():
     update = object.__new__(UpdateBotNewBusinessMessage)
     update.connection_id = "c"
     update.message = Message(
+        date=None,
         id=4, message="code#", peer_id=PeerUser(1), from_id=PeerUser(999)
     )
     update.respond = AsyncMock()
@@ -220,6 +225,7 @@ def test_updates_works_when_owner_id_is_unresolvable():
     update = object.__new__(UpdateBotNewBusinessMessage)
     update.connection_id = "c"
     update.message = Message(
+        date=None,
         id=4, message="code#", peer_id=PeerUser(1), from_id=PeerUser(7)
     )
     update.respond = AsyncMock(

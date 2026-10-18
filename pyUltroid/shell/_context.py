@@ -68,6 +68,7 @@ class Cap(str):
 
     # Telegram
     TG_SEND = "tg.send"  # send Telegram messages
+    TG_SEND_FILE = "tg.file_send"  # send generated text attachments
     TG_READ = "tg.read"  # read Telegram messages/history
     TG_RAW = "tg.raw"  # invoke allowlisted raw MTProto functions
 

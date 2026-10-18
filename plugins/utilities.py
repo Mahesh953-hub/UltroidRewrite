@@ -58,7 +58,6 @@
 • `{i}lastpm` : Get details of the last pm you recieved
 """
 
-from pyUltroid.dB import db as dbs
 import asyncio
 import calendar
 import html
@@ -68,6 +67,8 @@ import pathlib
 import re
 import time
 from datetime import datetime as dt
+
+from pyUltroid.dB import db as dbs
 
 try:
     from PIL import Image
@@ -81,10 +82,12 @@ try:
 except ImportError:
     uf = None
 
+import motor.motor_asyncio
+import pytz
 from telethon.errors.rpcerrorlist import (
     ChatForwardsRestrictedError,
-    UserBotError,
     MessageTooLongError,
+    UserBotError,
 )
 from telethon.events import NewMessage
 from telethon.tl.custom import Dialog
@@ -99,7 +102,10 @@ from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.types import (
     Channel,
     Chat,
+    DocumentAttributeVideo,
     InputMediaPoll,
+    MessageMediaDocument,
+    MessageMediaPhoto,
     Poll,
     PollAnswer,
     TextWithEntities,
@@ -107,14 +113,10 @@ from telethon.tl.types import (
     User,
     UserStatusOffline,
     UserStatusOnline,
-    MessageMediaPhoto,
-    MessageMediaDocument,
-    DocumentAttributeVideo,
 )
 from telethon.utils import get_peer_id
 
-from pyUltroid._core.entities import mdv3_to_entities
-from pyUltroid.fns import fns
+from custom.entities import mdv3_to_entities
 
 from . import (
     HNDLR,
@@ -122,19 +124,14 @@ from . import (
     Image,
     Telegraph,
     asst,
+    asst_cmd,
     eod,
     eor,
     get_string,
     udB,
+    ultroid_bot,
     ultroid_cmd,
-    asst_cmd,
 )
-
-import motor.motor_asyncio
-import pytz
-from telethon import events, types
-
-from . import *
 
 # Telegram caption limit, used by getmsg() fallbacks.
 CAPTION_LIMIT = 1024
@@ -420,7 +417,7 @@ async def _(event):
         try:
             last_online_status = f"<b>•Last Online</b>: <code>{await last_online_info(event, user.id)}</code>"
         except Exception:
-            last_online_status = f"<b>•Last Online</b>: <code>Unknown</code>"
+            last_online_status = "<b>•Last Online</b>: <code>Unknown</code>"
     user = _
     user_photos = (
         await event.client.get_profile_photos(user.id, limit=0)
@@ -1096,7 +1093,7 @@ async def get_restricted_msg(event):
 @ultroid_cmd(pattern="lastpm$", fullsudo=True)
 async def get_last_private_message(event):
     xx = await event.eor(get_string("com_1"))
-    res = f"**Lᴀsᴛ PM Rᴇᴄɪᴇᴠᴇᴅ:**\n"
+    res = "**Lᴀsᴛ PM Rᴇᴄɪᴇᴠᴇᴅ:**\n"
     try:
         async for dialog in ultroid_bot.iter_dialogs():
             if dialog.is_user:

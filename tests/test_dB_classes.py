@@ -253,6 +253,15 @@ def test_guest_db(dB_modules):
     assert not m.is_guest(7)
 
 
+def test_guestmode_wrappers_use_database_union_instance(dB_modules):
+    startup = types.ModuleType("pyUltroid.startup")
+    startup.__path__ = [str(ROOT / "pyUltroid" / "startup")]
+    sys.modules["pyUltroid.startup"] = startup
+    guestmode = importlib.import_module("pyUltroid.startup.guestmode")
+
+    assert guestmode._store() is dB_modules.dbs.guest
+
+
 def test_guest_db_clean_expired(dB_modules):
     m = dB_modules.dbs.guest
     m.add_guest(9, expiry_seconds=-1)

@@ -5,6 +5,7 @@
 # PLease read the GNU Affero General Public License in
 # <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
 
+import asyncio
 import html
 import re
 import time
@@ -13,8 +14,14 @@ from math import ceil
 from os import remove
 
 from telethon import Button
-from telethon.tl.types import InputWebDocument, Message
-from telethon.utils import resolve_bot_file_id
+from telethon.errors import BadRequestError, RPCError
+from telethon.tl.types import (
+    InputBotInlineMessageID,
+    InputBotInlineMessageID64,
+    InputWebDocument,
+    Message,
+)
+from telethon.utils import get_display_name, resolve_bot_file_id
 
 from pyUltroid._core import (
     InlineResultBuilder,
@@ -24,9 +31,11 @@ from pyUltroid._core._cbs import cb, cb_exact_pattern, cb_pattern
 from pyUltroid._core.richmsg import (
     RichBlocks,
     RichMarkup,
+    blocks_to_plain_text,
+    edit_inline_plain,
     edit_rich,
     normalize_blocks,
-    render_blocks_native_html,
+    rich_markup_from_blocks,
 )
 from pyUltroid.dB._core import HELP, LIST
 from pyUltroid.fns import fns
@@ -42,7 +51,6 @@ from . import (
     callback,
     get_string,
     in_pattern,
-    inline_pic,
     start_time,
     udB,
 )
@@ -65,6 +73,8 @@ zhelps = get_string("inline_3") if add_ons is False else get_string("inline_2")
 PLUGINS = HELP.get("Official", [])
 ADDONS = HELP.get("Addons", [])
 upage = 0
+INLINE_ALIVE_RESULT_ID = "alive-deploy"
+INLINE_DEPLOY_SEND_DELAY_SECONDS = 3.5
 # ============================================#
 
 # --------------------BUTTONS--------------------#
@@ -92,11 +102,6 @@ def _ui_buttons_styled() -> bool:
         return ui_buttons_style() == "styled"
     except Exception:
         return False
-
-
-def _buttons_style_tag() -> str:
-    """Short cache-key tag so a `.ui buttons` flip busts cached inline results."""
-    return "styled" if _ui_buttons_styled() else "classic"
 
 
 def _btn(text: str, *, data=None, url=None, preset=None):
@@ -151,12 +156,12 @@ def _catalog_help_blocks(key, index=0):
         page = max(0, min(int(index), page_count - 1))
     except (TypeError, ValueError):
         page = 0
-    header = RichBlocks(engine="rich", format="html", is_bot=True)
+    header = RichBlocks(format="html")
     header.header(title, level=2)
     header.paragraph(
         "Browse this library to open a plugin's handlers, documentation, and controls."
     )
-    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview = RichBlocks(format="html")
     overview.header("Overview", level=2)
     overview.table(
         [
@@ -169,12 +174,13 @@ def _catalog_help_blocks(key, index=0):
     )
     if not catalogs:
         overview.paragraph("No modules are currently available in this library.")
-    header_html, _files = render_blocks_native_html(normalize_blocks(header))
-    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
+    markup = rich_markup_from_blocks(
+        normalize_blocks(header) + normalize_blocks(overview), format="html"
+    )
     return RichMarkup(
-        f"{header_html}<hr>{overview_html}<hr>"
-        f"<p><i>{_page_footer(page + 1, page_count, len(catalogs))}</i></p>",
+        f"{markup.text}<hr><p><i>{_page_footer(page + 1, page_count, len(catalogs))}</i></p>",
         "html",
+        markup.files,
     )
 
 
@@ -205,12 +211,12 @@ def _plugin_card_markup(file, key, body, patterns, pmf_entries=()):
         "Addons": "Add-ons",
         "VCBot": "Voice chat",
     }.get(key, str(key))
-    header = RichBlocks(engine="rich", format="html", is_bot=True)
+    header = RichBlocks(format="html")
     header.header(_plugin_label(file), level=2)
     header.paragraph(
         "Browse this plugin's command handlers, documentation, and controls."
     )
-    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview = RichBlocks(format="html")
     overview.header("Overview", level=2)
     contains = f"{len(commands)} command(s)"
     if pmf_entries:
@@ -224,20 +230,23 @@ def _plugin_card_markup(file, key, body, patterns, pmf_entries=()):
         is_bordered=True,
         is_striped=True,
     )
-    details = RichBlocks(engine="rich", format="html", is_bot=True)
+    details = RichBlocks(format="html")
     if commands:
         details.expandable("Commands", "\n".join(commands))
     if pmf_entries:
         details.expandable("PMF guide", _pmf_guide_text(pmf_entries))
-    header_html, _files = render_blocks_native_html(normalize_blocks(header))
-    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
-    details_html, _files = render_blocks_native_html(normalize_blocks(details))
+    markup = rich_markup_from_blocks(
+        normalize_blocks(header)
+        + normalize_blocks(overview)
+        + normalize_blocks(details),
+        format="html",
+    )
     documentation = _as_html(body) if body else "No documentation is registered."
     docs_html = f"<blockquote expandable><b>Docs</b>\n{documentation}</blockquote>"
     return RichMarkup(
-        f"{header_html}<hr>{overview_html}<hr>{docs_html}{details_html}"
-        f"<hr><p><i>{_page_footer(1, 1, total_handlers)}</i></p>",
+        f"{markup.text}<hr>{docs_html}<hr><p><i>{_page_footer(1, 1, total_handlers)}</i></p>",
         "html",
+        markup.files,
     )
 
 
@@ -245,22 +254,22 @@ async def _edit_rich_callback(event, content, buttons):
     """Edit a normal or inline callback message with a native RichMessage."""
     query = getattr(event, "query", None)
     inline_id = getattr(query, "msg_id", None)
-    if inline_id is not None and type(inline_id).__name__ in {
-        "InputBotInlineMessageID",
-        "InputBotInlineMessageID64",
-    }:
+    inline_types = {"InputBotInlineMessageID", "InputBotInlineMessageID64"}
+    message = getattr(event, "message_id", None)
+    if type(message).__name__ in inline_types:
+        peer, message = message, None
+    elif type(inline_id).__name__ in inline_types:
         peer, message = inline_id, None
     else:
-        peer, message = event.chat_id, event
+        if message is None:
+            message = inline_id
+        peer = getattr(event, "chat_id", None)
     return await edit_rich(
         event.client,
         peer,
         message,
         content,
-        engine="rich",
         format="html",
-        is_bot=True,
-        is_premium=False,
         buttons=buttons,
         link_preview=False,
     )
@@ -297,99 +306,290 @@ def _sup_buttons():
 # --------------------BUTTONS--------------------#
 
 
-def _alive_text() -> str:
-    """The bot-name article body (Ultroid details + config).
-
-    Shared by :func:`inline_alive` (to build the cached article) and the
-    empty-query inline-send deploy handler (to *keep everything* while
-    appending the "wanna deploy?" call-to-action).
-    """
-    _bot = getattr(asst, "me", None)
-    _bot_name = getattr(_bot, "first_name", None) or (
-        getattr(_bot, "username", None) or "Ultroid"
+def _alive_rich_markup(invoker_name=None):
+    """Build the Ultroid status/deploy card directly as RichMessage HTML."""
+    uptime = fns.time_formatter((time.time() - start_time) * 1000)
+    official_count = len(HELP.get("Official") or {})
+    addon_count = len(HELP.get("Addons") or {})
+    rows = (
+        ("Owner", OWNER_NAME),
+        ("Uptime", uptime),
+        ("Plugins", str(official_count)),
+        ("Addons", str(addon_count)),
     )
-    _up = fns.time_formatter((time.time() - start_time) * 1000)
+    parts = ["<h1>Ultroid · Alive</h1>", "<hr>"]
+    if invoker_name:
+        parts.append(
+            f"<p>Hey {html.escape(str(invoker_name))}, want to deploy your own? "
+            "Tap <b>Hi</b> to continue.</p>"
+        )
+    parts.append('<table class="bordered compact"><tr><th>Item</th><th>Details</th></tr>')
+    parts.extend(
+        f"<tr><td>{html.escape(label)}</td><td>{html.escape(value)}</td></tr>"
+        for label, value in rows
+    )
+    parts.append(f"</table><hr><p><i>page 1 of 1 • total {len(rows)}</i></p>")
+    return RichMarkup("".join(parts), "html")
+
+
+def _deploy_guide_blocks(invoker_name):
+    """Build real nested Layer-230 details, code, tables and in-body buttons.
+
+    PageBlockButtonRow is a PageBlock, so it belongs in Details.blocks, not
+    in the message's separate reply_markup. All copy payloads are examples.
+    """
+    from telethon.tl import types
+
+    repo = "https://github.com/Mahesh953-hub/SarahUB"
+    docs = repo + "/blob/main/docs/SETUP.md"
+
+    def text(value):
+        return types.TextPlain(str(value))
+
+    def paragraph(value):
+        return types.PageBlockParagraph(text(value))
+
+    def url(label, target):
+        return types.PageButton(text(label), types.InlineButtonTypeUrl(target))
+
+    def buttons(*items):
+        return types.PageBlockButtonRow(list(items))
+
+    def code(value, *, language="bash", label="Copy command"):
+        return [
+            types.PageBlockPreformatted(text(value), language),
+            buttons(types.PageButton(text(label), types.InlineButtonTypeCopy(value))),
+        ]
+
+    def details(title, children, *, opened=False):
+        return types.PageBlockDetails(children, text(title), open=opened)
+
+    def linked(label, target):
+        return types.TextUrl(text(label), target, 0)
+
+    env = (
+        "API_ID=YOUR_API_ID\n"
+        "API_HASH=YOUR_API_HASH\n"
+        "SESSION=\n"
+        "#-- OPTIONAL\n"
+        "LOG_CHANNEL=\n"
+        "BOT_TOKEN=\n"
+        "MONGO_URI="
+    )
+    sources = [
+        ("API_ID", "Create an app in Telegram API development tools.",
+         "Telegram apps", "https://my.telegram.org/apps"),
+        ("API_HASH", "Use the hash from that same Telegram app; keep it private.",
+         "Telegram apps", "https://my.telegram.org/apps"),
+        ("SESSION", "Leave blank for first-run private OTP/QR setup; it saves your session locally.",
+         "Private setup guide", docs + "#web-setup-server"),
+        ("LOG_CHANNEL", "Optional numeric ID of a group/channel you control; allow the bot to post.",
+         "Telegram IDs", "https://core.telegram.org/api/peers#peer-id"),
+        ("BOT_TOKEN", "Optional assistant token: create your own bot with BotFather.",
+         "BotFather", "https://t.me/BotFather"),
+        ("MONGO_URI", "Optional connection URI from your own MongoDB deployment; includes credentials.",
+         "MongoDB Atlas", "https://www.mongodb.com/docs/atlas/driver-connection/"),
+    ]
+    rows = [types.PageTableRow([
+        types.PageTableCell(text=text(label), header=True)
+        for label in ("Variable", "Where to obtain it", "Open")
+    ])]
+    rows.extend(types.PageTableRow([
+        types.PageTableCell(text=types.TextFixed(text(name))),
+        types.PageTableCell(text=text(description)),
+        types.PageTableCell(text=linked(label, target)),
+    ]) for name, description, label, target in sources)
+    obtain = [types.PageBlockTable(
+        text("Where each value comes from"), rows, bordered=True, striped=True, compact=True,
+    )]
+    obtain.extend([
+        buttons(url("API ID / hash", "https://my.telegram.org/apps"),
+                url("Session setup", docs + "#web-setup-server")),
+        buttons(url("Channel IDs", "https://core.telegram.org/api/peers#peer-id"),
+                url("BotFather", "https://t.me/BotFather")),
+        buttons(url("MongoDB URI", "https://www.mongodb.com/docs/atlas/driver-connection/")),
+    ])
+
+    steps = [
+        details("Step 1 · Clone the repository", [
+            paragraph("Use Git and Python 3.10+ (3.12 recommended). Private repositories require "
+                      "GitHub access; authenticate securely, never paste a token into the clone URL."),
+            *code("git clone https://github.com/Mahesh953-hub/SarahUB.git Ultroid\ncd Ultroid",
+                  label="Copy clone commands"),
+            buttons(url("Repository", repo), url("Setup guide", docs)),
+        ], opened=True),
+        details("Step 2 · Install requirements", [
+            paragraph("Choose pip OR uv, not both. Run commands from the Ultroid folder on Linux/macOS."),
+            details("2a · pip", [
+                *code("python3 -m venv .venv\nsource .venv/bin/activate\n"
+                      "python -m pip install --upgrade pip\npython -m pip install -r requirements.txt",
+                      label="Copy pip install"),
+            ]),
+            details("2b · uv", [
+                paragraph("Install uv first if needed, then create the environment and install the project."),
+                *code("uv venv --python 3.12\nuv pip install -e .", label="Copy uv install"),
+                buttons(url("Install uv", "https://docs.astral.sh/uv/getting-started/installation/")),
+            ]),
+        ]),
+        details("Step 3 · Fill in your variables", [
+            paragraph("Create a private .env file in the repository root, then replace YOUR_API_ID and "
+                      "YOUR_API_HASH. SESSION may stay blank for first-run setup. Optional values may stay blank."),
+            *code("umask 077\ntouch .env\nchmod 600 .env\nnano .env", label="Copy .env preparation"),
+            *code(env, language="dotenv", label="Copy variable template"),
+            details("3a · Where to obtain every value", obtain),
+        ]),
+        details("Step 4 · Start Ultroid", [
+            paragraph("Choose the launch method matching your install. Only run one instance per session."),
+            details("4a · Run as a Python module", [
+                *code("source .venv/bin/activate\npython3 -m pyUltroid", label="Copy module start"),
+            ], opened=True),
+            details("4b · Run with uv", [
+                *code("uv run --no-sync python3 -m pyUltroid", label="Copy uv start"),
+            ], opened=True),
+        ]),
+        details("Step 5 · Complete private first-run login", [
+            paragraph("If SESSION is blank, open the private setup URL printed in your terminal. "
+                      "Use the setup token shown there and complete phone OTP or QR login. "
+                      "The setup saves the session in your local .env. Keep the URL/token private; "
+                      "do not expose an unprotected setup server to the Internet."),
+            paragraph("Wait for startup to finish, then test your configured commands in Saved Messages. "
+                      "If switching to a background launch, stop this foreground instance first with Ctrl+C."),
+            buttons(url("First-run setup", docs + "#web-setup-server")),
+        ]),
+        details("Step 6 · Keep it running", [
+            paragraph("Choose ONE method after successful setup and after stopping the foreground worker. "
+                      "These keep it alive after SSH logout, not after a server reboot or crash; "
+                      "use a properly configured systemd service for automatic restart. "
+                      "Protect log files because they can contain private setup details."),
+            details("6a · nohup", [
+                *code("umask 077\nnohup .venv/bin/python -m pyUltroid > ultroid.log 2>&1 < /dev/null &",
+                      label="Copy nohup start"),
+            ]),
+            details("6b · screen", [
+                paragraph("Requires screen installed. Detach with Ctrl+A, then D; reattach with the command below. "
+                          "Do not launch a second worker when reconnecting."),
+                *code("screen -S ultroid .venv/bin/python -m pyUltroid", label="Copy screen start"),
+                *code("screen -r ultroid", label="Copy screen reattach"),
+            ]),
+        ]),
+        details("Step 7 · Use custom addons", [
+            paragraph("Only load code you trust: addons execute with your account's permissions. "
+                      "Telegram command examples use the default dot prefix; replace it if you changed yours."),
+            details("7a · Enable addons", [
+                paragraph("Add this setting to .env, then restart your existing worker once. "
+                          "An existing database ADDONS setting can override the environment."),
+                *code("ADDONS=true", language="dotenv", label="Copy addon setting"),
+                buttons(url("Default addon repository", "https://github.com/Mahesh953-hub/MYADDONS")),
+            ], opened=True),
+            details("7b · Use a channel", [
+                paragraph("Join your trusted channel with the user account and upload addon .py files there. "
+                          "Run this in Telegram, replacing the example channel. "
+                          "PLUGIN_CHANNEL is a database list, not an .env variable. "
+                          "Channel loading requires a user account; it is unavailable in bot-only mode."),
+                *code('.setdb PLUGIN_CHANNEL ["@your_addon_channel"]\n.restart',
+                      language="text", label="Copy channel commands"),
+                buttons(url("Channel loader source", repo + "/blob/main/pyUltroid/startup/funcs.py")),
+            ], opened=True),
+            details("7c · Use a repository", [
+                paragraph("Before the first addon clone, set ADDONS_URL in Telegram to a trusted repository. "
+                          "Replace OWNER/ADDONS_REPO. This is a database key, not an .env variable. "
+                          "If addons/ already exists, this setting does not replace it: preserve local work "
+                          "and migrate deliberately. For private access configure GIT_TOKEN securely in your "
+                          "environment, never in a Telegram command or repository URL."),
+                *code(".setdb ADDONS_URL https://github.com/OWNER/ADDONS_REPO.git\n.restart",
+                      language="text", label="Copy repository commands"),
+                buttons(url("Addon loader source", repo + "/blob/main/pyUltroid/startup/loader.py")),
+            ], opened=True),
+        ]),
+    ]
+    return types.InputRichMessage(blocks=[
+        types.PageBlockParagraph(types.TextBold(text("Deploy your own Ultroid"))),
+        paragraph(f"Hey {invoker_name}! Browse these steps to deploy your own Ultroid."),
+        types.PageBlockDivider(),
+        *steps,
+        types.PageBlockDivider(),
+        types.PageBlockParagraph(types.TextMarked(types.TextBold(text(
+            "NEVER share your SESSION string or MongoDB MONGO_URI. They can grant access to your "
+            "account and database. Also keep API_HASH, BOT_TOKEN, OTPs and .env private; "
+            "never commit them to Git."
+        )))),
+        types.PageBlockParagraph(types.TextItalic(text("page 1 of 1 • total 7"))),
+    ])
+
+
+def _is_deploy_inline_send(update):
+    """Accept only the empty-query send of the alive/deploy inline result."""
+    inline_id = getattr(update, "msg_id", None)
     return (
-        f"• **{_bot_name} — Ultroid Userbot**\n"
-        f"• **Owner:** {OWNER_NAME}\n"
-        f"• **Uptime:** `{_up}`\n"
-        f"• **Plugins:** {len(PLUGINS)} official / {len(ADDONS)} addons\n"
-        "• **Support:** @TeamUltroid"
+        not (getattr(update, "query", "") or "").strip()
+        and getattr(update, "id", None) == INLINE_ALIVE_RESULT_ID
+        and type(inline_id).__name__
+        in {"InputBotInlineMessageID", "InputBotInlineMessageID64"}
+    )
+
+
+async def _handle_deploy_inline_send(update, client=None):
+    """Wait for Telegram's inline-send update, then personalize its exact message."""
+    if not _is_deploy_inline_send(update):
+        return None
+    client = client or asst
+    await asyncio.sleep(INLINE_DEPLOY_SEND_DELAY_SECONDS)
+    full_name = "there"
+    user_id = getattr(update, "user_id", None)
+    if user_id:
+        try:
+            sender = await client.get_entity(int(user_id))
+            full_name = get_display_name(sender) or getattr(sender, "username", None) or "there"
+        except Exception as exc:
+            LOGS.debug("[inline_deploy] invoker lookup failed (%s)", type(exc).__name__)
+    return await edit_rich(
+        client,
+        update.msg_id,
+        None,
+        _alive_rich_markup(full_name),
+        format="html",
+        buttons=[[_btn("Hi", data="alive_deploy_hi", preset="success")]],
+        link_preview=False,
     )
 
 
 @in_pattern(owner=True, func=lambda x: not x.text)
 async def inline_alive(o):
-    TLINK = inline_pic()
     builder = InlineResultBuilder(o)
-    # W2-D: reuse the built result for the Telegram cache_time window.
-    # C2: key on the button style so a `.ui buttons` flip busts the cache.
-    cache_key = f"inline:alive:{TLINK or 'none'}:{_buttons_style_tag()}"
-    RES = core.inline_cache.get(cache_key)
-    if RES is None:
-        MSG = _alive_text()
-        # Use a plain photo result when a picture is configured; otherwise a
-        # media-free article. Building a *text* article with `include_media`
-        # + a hard-coded graph.org thumb/content is what produced
-        # ``SendMessageMediaInvalidError`` from SetInlineBotResultsRequest.
-        if TLINK:
-            article = await builder.photo(
-                file=TLINK,
-                link_preview=False,
-                text=MSG,
-                buttons=_sup_buttons(),
-            )
-        else:
-            article = await builder.article(
-                title="Ultroid Userbot",
-                description="Userbot | Telethon",
-                text=MSG,
-                buttons=_sup_buttons(),
-            )
-        RES = [article] if article is not None else []
-        if RES:
-            core.inline_cache.set(cache_key, RES, ttl=300)
+    # Uptime, plugin totals and controls are live: neither the process nor
+    # Telegram may reuse an earlier snapshot. Keep the chosen-result routing ID.
+    article = await builder.article_rich(
+        title="Ultroid Userbot",
+        payload=_alive_rich_markup(),
+        format="html",
+        id=INLINE_ALIVE_RESULT_ID,
+        description="Userbot | Telethon",
+        buttons=_sup_buttons(),
+    )
     await builder.answer(
-        RES,
+        [article] if article is not None else [],
         private=True,
-        cache_time=300,
-        switch_pm="👥 ULTROID PORTAL",
+        cache_time=0,
+        switch_pm="Ultroid Portal",
         switch_pm_param="start",
     )
 
 
 @in_pattern("ultd", owner=True)
 async def inline_handler(event):
-    z = []
-    for x in LIST.values():
-        z.extend(x)
-    pic = inline_pic()
-    # W2-D: cache the built help result; key tracks pic + plugin counts so
-    # a load/unload or pic change invalidates naturally. TTL mirrors cache_time.
-    # C2: also key on the button style so a `.ui buttons` flip doesn't keep
-    # serving a stale classic/styled result until the cache_time window ends.
-    cache_key = (
-        f"inline:ultd:{pic}:{len(HELP.get('Official', []))}:"
-        f"{len(HELP.get('Addons', []))}:{len(z)}:{_buttons_style_tag()}"
-    )
     builder = InlineResultBuilder(event)
-    result = core.inline_cache.get(cache_key)
-    if result is None:
-        result = await builder.article_rich(
-            title="Bot Help",
-            payload=_help_blocks().text,
-            engine="rich",
-            format="html",
-            is_premium=False,
-            is_bot=True,
-            buttons=main_help_menu_buttons(),
-        )
-        if result is not None:
-            core.inline_cache.set(cache_key, result, ttl=300)
+    # Counts alone cannot invalidate renamed commands, new help text or settings.
+    # Rebuild this small live menu; leave unrelated inline/media caches intact.
+    result = await builder.article_rich(
+        title="Bot Help",
+        payload=_help_blocks(),
+        format="html",
+        buttons=main_help_menu_buttons(),
+    )
     await builder.answer(
         [result] if result is not None else [],
         private=True,
-        cache_time=300,
+        cache_time=0,
         gallery=True,
     )
 
@@ -399,9 +599,9 @@ async def _(event):
     ok = event.text.split("-")[1]
     link = f"https://spaceb.in/{ok}"
     raw = f"https://spaceb.in/api/{ok}/raw"
-    result = await event.builder.article(
+    result = await InlineResultBuilder(event).article(
         title="Paste",
-        text="Pasted to Spacebin 🌌",
+        text="Pasted to Spacebin.",
         buttons=[
             [
                 Button.url("SpaceBin", url=link),
@@ -565,7 +765,7 @@ async def _show_plugin(event, key, file, index):
     except Exception as er:
         LOGS.exception(er)
         fallback = (
-            RichBlocks(engine="rich", format="html", is_bot=True)
+            RichBlocks(format="html")
             .header("Plugin guide unavailable", level=2)
             .paragraph(
                 "The guide could not be rendered in place. Use this command instead:"
@@ -998,7 +1198,107 @@ async def something(e, msg, media, button, reply=True, chat=None):
         LOGS.exception(er)
 
 
-# ─── Creative "deploy your Ultroid" inline_send flow ────────────────────
+# Creative deploy inline-send flow
+
+
+def _deploy_rpc_diagnostic(exc):
+    """Return bounded protocol labels; never stringify a Telegram error."""
+    from pyUltroid._core.richdebug import rpc_identifier
+
+    identifier = rpc_identifier(exc)
+    category = "BadRequestError" if isinstance(exc, BadRequestError) else "RPCError"
+    return identifier, category
+
+
+def _log_deploy_rpc(exc, *, inline_target, message_target, attempted=False, succeeded=False):
+    identifier, category = _deploy_rpc_diagnostic(exc)
+    LOGS.warning(
+        "[inline_deploy] rpc_id=%s rpc_type=%s message_target_recognized=%s "
+        "inline_target_recognized=%s fallback_attempted=%s fallback_succeeded=%s",
+        identifier,
+        category,
+        bool(message_target),
+        bool(inline_target),
+        bool(attempted),
+        bool(succeeded),
+    )
+
+
+async def _show_deploy_guide(event, content, buttons=None):
+    """Prefer RichMessage; diagnose RPC failures without logging private data."""
+    def plain_fallback():
+        # Native PageBlocks are not RichBlocks dictionaries. Keep the commands
+        # readable if an inline destination rejects RichMessage altogether.
+        from telethon.tl.types import InputRichMessage
+
+        if not isinstance(content, InputRichMessage):
+            return blocks_to_plain_text(content)
+
+        def flatten(node):
+            kind = type(node).__name__
+            if kind == "PageBlockDetails":
+                return [node.title.text, *[line for child in node.blocks for line in flatten(child)]]
+            if kind == "PageBlockPreformatted":
+                return [node.text.text]
+            return []
+
+        sections = [line for block in content.blocks for line in flatten(block)]
+        return (
+            "Plain-text guide: collapsibles, tables and in-section copy/URL buttons "
+            "are unavailable in this inline destination. The commands below are examples; "
+            "choose one install/start method, replace placeholders, and do not start duplicate workers. "
+            "If SESSION is blank, complete OTP/QR login using the private setup URL/token in your terminal.\n\n"
+            + "\n\n".join(sections)
+            + "\n\nFor full explanations and value sources, open Repository → docs/SETUP.md. "
+            "Never share SESSION, MONGO_URI, API_HASH, BOT_TOKEN, OTPs or .env."
+        )
+
+    try:
+        result = await _edit_rich_callback(event, content, buttons)
+    except RPCError as exc:
+        inline_types = (InputBotInlineMessageID, InputBotInlineMessageID64)
+        query_id = getattr(getattr(event, "query", None), "msg_id", None)
+        message_id = getattr(event, "message_id", None)
+        inline_id = next(
+            (candidate for candidate in (message_id, query_id) if isinstance(candidate, inline_types)),
+            None,
+        )
+        message_target = inline_id is not None or (
+            getattr(event, "chat_id", None) is not None
+            and type(message_id if message_id is not None else query_id) is int
+        )
+        diagnostic = {"inline_target": inline_id is not None, "message_target": message_target}
+        diagnostic["attempted"] = (
+            _deploy_rpc_diagnostic(exc)[0] == "RICH_MESSAGE_UNSUPPORTED"
+            and inline_id is not None
+        )
+        _log_deploy_rpc(exc, **diagnostic)
+        if diagnostic["attempted"]:
+            try:
+                result = await edit_inline_plain(
+                    event.client,
+                    inline_id,
+                    plain_fallback(),
+                    buttons=buttons,
+                    link_preview=False,
+                )
+            except RPCError as fallback_exc:
+                _log_deploy_rpc(fallback_exc, **diagnostic)
+            else:
+                diagnostic["succeeded"] = True
+                _log_deploy_rpc(exc, **diagnostic)
+                await event.answer()
+                return result
+        try:
+            await event.answer(
+                "The guide could not be updated. Please try again.", alert=True
+            )
+        except RPCError as answer_exc:
+            # Only Telegram RPC failures (e.g. expired query) are expected here.
+            _log_deploy_rpc(answer_exc, **diagnostic)
+        return None
+    await event.answer()
+    return result
 
 
 @callback(data="alive_deploy_hi")
@@ -1009,28 +1309,30 @@ async def _cb_alive_deploy_hi(event):
     the freshly-selected ``inline_alive`` article. Answers with a real,
     actionable deploy prompt (never a no-op).
     """
-    who = OWNER_NAME
+    who = "there"
     try:
         sender = await event.get_sender()
     except Exception:
         sender = None
     if sender is not None:
-        who = fns.inline_mention(sender) or OWNER_NAME
-    await event.answer("🚀 Let's get you deployed!", alert=True)
-    await event.edit(
-        f"Hey {who}! 🚀\n\n"
-        "Deploy your own Ultroid in a few steps:\n"
-        "`1.` `git clone https://github.com/TeamUltroid/Ultroid && cd Ultroid`\n"
-        "`2.` `bash installer.sh`\n"
-        "`3.` Fill `.env` with `API_ID` / `API_HASH`\n"
-        "`4.` `bash startup`\n\n"
-        "Stuck? Join @TeamUltroid.",
-        link_preview=False,
+        who = get_display_name(sender) or getattr(sender, "username", None) or "there"
+    buttons = [[
+        _btn(
+            "Repository",
+            url="https://github.com/Mahesh953-hub/SarahUB",
+            preset="primary",
+        ),
+        _btn("Support", url="https://t.me/UltroidSupportChat", preset="primary"),
+    ]]
+    return await _show_deploy_guide(
+        event,
+        _deploy_guide_blocks(who),
+        buttons,
     )
 
 
 def _register_deploy_inline_send():
-    """Register the empty-query ``UpdateBotInlineSend`` deploy flow on ``asst``.
+    """Register the targeted ``UpdateBotInlineSend`` deploy flow on ``asst``.
 
     The bot-name article (``inline_alive``, empty query) is the one creative
     deploy entrypoint: when a user selects it, Telegram raises
@@ -1040,8 +1342,9 @@ def _register_deploy_inline_send():
     with a real ``Hi`` callback button.
 
     ``UpdateBotInlineSend`` also fires for programmatic clicks
-    (``.help`` → ``ultd``, ``something()`` → ``stf*``), so the handler gates on
-    an empty query only.
+    (``.help`` → ``ultd``, ``something()`` → ``stf*``), so the handler requires
+    both an empty query and the exact ``alive-deploy`` article ID. It waits a
+    short settle interval before editing only that chosen inline message.
     """
     if asst is None:
         return
@@ -1053,33 +1356,7 @@ def _register_deploy_inline_send():
 
     async def _on_alive_send(update):
         try:
-            query = getattr(update, "query", "") or ""
-            if query.strip():
-                return
-            msg_id = getattr(update, "msg_id", None)
-            if msg_id is None:
-                return
-            user_id = getattr(update, "user_id", None)
-            who = OWNER_NAME
-            if user_id:
-                try:
-                    who = (
-                        fns.inline_mention(await asst.get_entity(int(user_id)))
-                        or OWNER_NAME
-                    )
-                except Exception as e:
-                    LOGS.debug(f"[inline_deploy] get_entity failed: {e}")
-            text = (
-                f"{_alive_text()}\n\n"
-                f"Hey {who}, wanna deploy your Ultroid?\n"
-                "Tap **Hi** to get started 🚀"
-            )
-            await asst.edit_message(
-                msg_id,
-                text=text,
-                buttons=[[_btn("Hi 👋", data="alive_deploy_hi", preset="success")]],
-                link_preview=False,
-            )
+            await _handle_deploy_inline_send(update, asst)
         except Exception as e:
             LOGS.exception(f"[inline_deploy] inline-send edit failed: {e}")
 

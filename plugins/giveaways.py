@@ -35,7 +35,7 @@
 import contextlib
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, List
+from typing import Any
 
 from telethon.errors import RPCError
 from telethon.tl import types as tl_types
@@ -48,7 +48,7 @@ from pyUltroid._core.stars import require_request as _payments_request
 from . import HNDLR, ultroid_cmd
 
 # ──────────────────────────────────────────────────────────────────────
-# Verified against the pinned fork (layer 228):
+# Verified against the pinned fork (layer 230):
 #
 # Present in ``payments.*``: ``GetGiveawayInfoRequest``, ``CheckGiftCodeRequest``,
 # ``ApplyGiftCodeRequest``, ``GetPremiumGiftCodeOptionsRequest``,

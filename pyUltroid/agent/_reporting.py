@@ -120,11 +120,13 @@ def report_run(
     tests.
     """
     try:
+        if ok:
+            return None
         channel = _log_channel()
         if not channel:
             return None
 
-        status = "ok" if ok else "failed"
+        status = "failed"
         header = f"Agent run · {origin} · {status}"
         lines = [
             ("Chat", chat_id),
@@ -139,10 +141,9 @@ def report_run(
                 "Duration",
                 f"{duration:.1f}s" if duration is not None else " - ",
             ),
-            ("Prompt", prompt[:200] + ("…" if len(prompt) > 200 else "")),
         ]
         if error:
-            lines.append(("Error", str(error)[:300]))
+            lines.append(("Error", "The agent run failed; details are withheld."))
 
         task = asyncio.ensure_future(_capped_report(header, lines))
 

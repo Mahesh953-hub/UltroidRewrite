@@ -23,6 +23,7 @@ import random
 from datetime import datetime
 
 from pyUltroid.fns import fns
+from pyUltroid._core.telethon_compat import get_sender_if_resolvable
 from . import LOGS, eod, get_string, udB, ultroid_bot, ultroid_cmd
 
 
@@ -56,7 +57,7 @@ from pyUltroid.configs import Var
 
 mongouri = udB.get_key("MONGO_URI") or Var.MONGO_URI or ""
 if not mongouri:
-    LOGS.error("Please set a MONGO_URI")
+    LOGS.warning("Oracle replies are disabled until MONGO_URI is configured")
 
 SOL_BASE_URL = "http://confidante-alb-150133398.ap-south-1.elb.amazonaws.com"
 SOL_FALLBACK_CONVO_ID = "edd8adb8-c7bb-4c0f-883b-3a413e816ec2"
@@ -813,7 +814,7 @@ async def cmd_listreplies(event):
 
 
 async def _auto_reply(e):
-    sender = await e.get_sender()
+    sender = await get_sender_if_resolvable(e)
     if not isinstance(sender, types.User) or sender.bot:
         return
 
@@ -876,12 +877,10 @@ async def _auto_reply(e):
         await asyncio.sleep(udB.get_key("CHATBOT_SLEEP") or 1.5)
         await e.reply(msg)
 
-    # Username tracking
-    chat = await e.get_chat()
-    if e.is_group and sender.username:
-        await uname_stuff(e.sender_id, sender.username, sender.first_name)
-    elif e.is_private and chat.username:
-        await uname_stuff(e.sender_id, chat.username, chat.first_name)
+    # In private chats, the sender is the chat user. Avoid get_chat()'s
+    # dialog scan, which cannot cast the pinned fork's Community peer.
+    if (e.is_group or e.is_private) and sender.username:
+        await uname_stuff(e.sender_id, sender.username, sender.first_name or "")
 
     # Profanity filter
     if detector and is_profan(e.chat_id) and e.text:

@@ -78,6 +78,20 @@ def test_first_call_is_allowed():
     assert _guard().before_call("t", {}).decision is Decision.ALLOW
 
 
+def test_identical_call_is_blocked_while_first_is_in_flight():
+    g = _guard()
+    first = g.before_call("send", {"chat": 1, "text": "hello"})
+    duplicate = g.before_call("send", {"text": "hello", "chat": 1})
+    assert first.decision is Decision.ALLOW
+    assert duplicate.decision is Decision.BLOCK
+    assert duplicate.code == "duplicate_in_flight"
+
+    g.observe("send", {"chat": 1, "text": "hello"}, {"ok": True})
+    assert (
+        g.before_call("send", {"chat": 1, "text": "hello"}).decision is Decision.ALLOW
+    )
+
+
 def test_repeat_failure_warns_at_two():
     g = _guard()
     _fail(g, "t", {"a": 1}, rounds=2)

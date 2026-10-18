@@ -5,8 +5,8 @@
 # PLease read the GNU Affero General Public License in
 # <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
 
-import html
 import asyncio
+import html
 import inspect
 import re
 import sys
@@ -33,6 +33,7 @@ from telethon.errors.rpcerrorlist import (
 from telethon.events import MessageEdited, NewMessage
 from telethon.utils import get_display_name
 
+from custom import fmtmsg
 from pyUltroid.exceptions import DependencyMissingError
 from strings import get_string
 
@@ -48,12 +49,12 @@ from .. import (
     udB,
     ultroid_bot,
 )
-from ..fns import fns
 from ..dB import DEVLIST
 from ..dB._core import LIST, LOADED
+from ..fns import fns
 from . import SUDO_M, owner_and_sudos, specials
 from ._wrappers import eod
-from custom import fmtmsg
+
 
 #: The FloodWait notice formats a millisecond duration. This used to be an
 #: undefined global ``tf``, so every FloodWait that reached this branch
@@ -205,9 +206,10 @@ def ultroid_cmd(
                     time=10,
                 )
             # Trace tracking integration
-            import uuid
             import time
-            from pyUltroid.tracer import TraceRecord, tracer
+            import uuid
+
+            from pyUltroid.tracer import TraceRecord, tr
             from pyUltroid.tracer._tracker import _set_trace
 
             plugin = getattr(dec, "__module__", "unknown")
@@ -223,7 +225,9 @@ def ultroid_cmd(
                 # a plain string. Never let that tuple reach tracing or handlers.
                 if isinstance(text, tuple):
                     text = text[0] if text else ""
-                raw_text = str(text or "")[:200]
+                from .._core.notices import sanitize_error_text
+
+                raw_text = sanitize_error_text(str(text or ""))[:200]
             except Exception:
                 user_id = chat_id = 0
                 is_private = False
@@ -250,18 +254,15 @@ def ultroid_cmd(
                     trace.close(success=False, exc=e)
                     raise
             except FloodWaitError as fwerr:
-                await asst.send_message(
-                    udB.get_key("LOG_CHANNEL"),
-                    f"`FloodWaitError:\n{str(fwerr)}\n\nSleeping for {tf((fwerr.seconds + 10) * 1000)}`",
-                )
-                # fixing for auto-restart once Floodwait errored.
-                # await ultroid_bot.disconnect()
+                try:
+                    safe_wait = sanitize_error_text(str(fwerr))
+                    await asst.send_message(
+                        udB.get_key("LOG_CHANNEL"),
+                        f"`FloodWaitError:\n{safe_wait}\n\nSleeping for {tf((fwerr.seconds + 10) * 1000)}`",
+                    )
+                except Exception:  # noqa: S110 - failure notices must survive without logging credential-bearing exceptions
+                    pass
                 await asyncio.sleep(fwerr.seconds + 10)
-                # await ultroid_bot.connect()
-                await asst.send_message(
-                    udB.get_key("LOG_CHANNEL"),
-                    "`Bot is working again`",
-                )
                 return
             except ChatSendInlineForbiddenError:
                 return await eod(ult, "`Inline Locked In This Chat.`")
@@ -270,120 +271,106 @@ def ultroid_cmd(
             except (BotMethodInvalidError, UserIsBotError):
                 return await eod(ult, get_string("py_d6"))
             except AlreadyInConversationError:
-                return await eod(
-                    ult,
-                    get_string("py_d7"),
-                )
+                return await eod(ult, get_string("py_d7"))
             except (BotInlineDisabledError, DependencyMissingError) as er:
-                return await eod(ult, f"`{er}`")
-            except (
-                MessageIdInvalidError,
-                MessageNotModifiedError,
-                MessageDeleteForbiddenError,
-            ) as er:
-                LOGS.exception(er)
-            except AuthKeyDuplicatedError as er:
-                LOGS.exception(er)
-                await asst.send_message(
-                    udB.get_key("LOG_CHANNEL"),
-                    "Session String expired, create new session from 👇",
-                    buttons=ikm(
-                        [
-                            [
-                                (
-                                    "Bot",
-                                    "url",
-                                    "t.me/SessionGeneratorBot?start",
-                                    "primary",
-                                ),
-                                (
-                                    "Repl",
-                                    "url",
-                                    "https://replit.com/@TheUltroid/UltroidStringSession",
-                                    "green",
-                                ),
-                            ]
-                        ]
-                    ),
-                )
+                from .._core.notices import sanitize_error_text
+                return await eod(ult, f"`{sanitize_error_text(er)}`")
+            except (MessageIdInvalidError, MessageNotModifiedError, MessageDeleteForbiddenError):
+                try:
+                    LOGS.error("Command notice operation failed (message unavailable)")
+                except Exception:  # noqa: S110 - failure notices must survive without logging credential-bearing exceptions
+                    pass
+            except AuthKeyDuplicatedError:
+                try:
+                    LOGS.error("Authentication key duplicated; session requires re-authentication")
+                except Exception:  # noqa: S110 - failure notices must survive without logging credential-bearing exceptions
+                    pass
+                await eod(ult, "Session expired; re-authenticate the user session.")
                 sys.exit()
             except events.StopPropagation:
-                raise events.StopPropagation
+                raise
             except KeyboardInterrupt:
                 pass
             except Exception as e:
-                LOGS.exception(e)
-                event_text = html.escape(str(ult.text))
-                traceback_info = html.escape(str(format_exc()))
-                error_text = html.escape(str(sys.exc_info()[1]))
-                crash_data = {
-                    "Status": "Ultroid Client Error",
-                    "Trigger": (
-                        event_text[:30] + "..." if len(event_text) > 30 else event_text
-                    ),
-                }
-                stdout, stderr = await fns.bash(
-                    'git log --pretty=format:"%an: %s" -5'
-                )
-                git_logs = stdout + (stderr or "")
-                ftext = fmtmsg(
-                    head="Crash Report",
-                    data=crash_data,
-                    msgs=(
-                        f"<b>Traceback:</b>\n{traceback_info}\n\n"
-                        f"<b>Error:</b>\n{error_text}"
-                    ),
-                    foot=f"Last 5 Commits:\n{git_logs}",
+                from .._core.notices import (
+                    as_text,
+                    command_error_messages,
+                    error_caption,
+                    sanitize_error_text,
                 )
 
+                safe_trace = sanitize_error_text(format_exc())
+                safe_trigger = sanitize_error_text(as_text(getattr(ult, "text", "")))
+                safe_exception = sanitize_error_text(f"{type(e).__name__}: {e}")
+                try:
+                    LOGS.error("Command handler failed:\n%s", safe_trace)
+                except Exception:  # noqa: BLE001, S110 - failure notices must survive without logging credential-bearing exceptions
+                    pass
                 error_log = None
                 try:
                     from pyUltroid.imaging import Imaging
 
                     imaging = Imaging()
-
                     err_card = imaging.error_card(
-                        title=e.__class__.__name__,
-                        message=str(e),
-                        tb=traceback_info,
-                        plugin=f"{plugin}.{handler}",
+                        title=type(e).__name__, message=safe_exception,
+                        tb=safe_trace, plugin=f"{plugin}.{handler}",
                         request_id=trace.trace_id,
                     )
                     if err_card.ok:
                         card_buf = err_card.to_bytesio("PNG", "error_card.png")
                         if card_buf:
                             error_log = await asst.send_file(
-                                udB.get_key("LOG_CHANNEL"),
-                                card_buf,
-                                caption=f"**Ultroid Client Error:** `{e.__class__.__name__}: {str(e)}`",
+                                udB.get_key("LOG_CHANNEL"), card_buf,
+                                caption=error_caption(safe_exception), parse_mode="html",
                             )
-                except Exception as img_err:
-                    LOGS.error(f"Failed to generate/send error card image: {img_err}")
+                except Exception:  # noqa: BLE001 - failure notices must survive without logging credential-bearing exceptions
+                    try:
+                        LOGS.error("Failed to generate/send sanitized error card")
+                    except Exception:  # noqa: BLE001, S110 - failure notices must survive without logging credential-bearing exceptions
+                        pass
 
                 if not error_log:
-                    if len(ftext) > 4096:
-                        with BytesIO(ftext.encode()) as file:
-                            file.name = "logs.md"
-                            error_log = await asst.send_file(
-                                udB.get_key("LOG_CHANNEL"),
-                                file,
-                                caption="**Ultroid Client Error:** `Forward this to` @UltroidSupportChat\n\n",
-                            )
-                    else:
-                        error_log = await asst.send_message(
-                            udB.get_key("LOG_CHANNEL"), ftext, parse_mode="v2"
+                    try:
+                        ftext = fmtmsg(
+                            head="Crash Report",
+                            data={"Status": "Ultroid Client Error", "Trigger": safe_trigger[:200]},
+                            msgs=(f"<b>Traceback:</b>\n<pre>{html.escape(safe_trace)}</pre>"
+                                  f"\n<b>Error:</b>\n{error_caption(safe_exception)}"),
+                            foot=f"Handler: {html.escape(plugin)}.{html.escape(handler)}",
                         )
-                if error_log:
-                    await ult.eor(
-                        f"<b><a href={error_log.message_link}>[An error occurred]</a></b>",
-                        link_preview=False,
-                        parse_mode="html",
-                    )
+                        if len(ftext) > 4000:
+                            with BytesIO(ftext.encode("utf-8")) as file:
+                                file.name = "sanitized-error-log.html"
+                                error_log = await asst.send_file(
+                                    udB.get_key("LOG_CHANNEL"), file,
+                                    caption=error_caption(safe_exception), parse_mode="html",
+                                )
+                        else:
+                            error_log = await asst.send_message(
+                                udB.get_key("LOG_CHANNEL"), ftext, parse_mode="html"
+                            )
+                    except Exception:  # noqa: BLE001 - failure notices must survive without logging credential-bearing exceptions
+                        try:
+                            LOGS.error("Failed to deliver sanitized command error log")
+                        except Exception:  # noqa: BLE001, S110 - failure notices must survive without logging credential-bearing exceptions
+                            pass
+
+                link = getattr(error_log, "message_link", None) if error_log else None
+                try:
+                    messages = command_error_messages(safe_trigger, safe_exception, link)
+                    for index, message in enumerate(messages):
+                        if index == 0:
+                            await ult.eor(message, link_preview=False, parse_mode="html")
+                        else:
+                            await ult.reply(message, link_preview=False, parse_mode="html")
+                except Exception:  # noqa: BLE001 - failure notices must survive without logging credential-bearing exceptions
+                    try:
+                        LOGS.error("Failed to deliver sanitized command error notice")
+                    except Exception:  # noqa: BLE001, S110 - failure notices must survive without logging credential-bearing exceptions
+                        pass
             finally:
                 _set_trace(None)
-                import asyncio
-
-                asyncio.ensure_future(tracer.record(trace))
+                asyncio.ensure_future(tr.live.record(trace))
 
         cmd = None
         blacklist_chats = False
@@ -467,7 +454,7 @@ def ultroid_cmd(
                     return
                 try:
                     await dec(ult)
-                except Exception as er:
+                except Exception as er:  # noqa: BLE001 - failure notices must survive without logging credential-bearing exceptions
                     if chat := udB.get_key("MANAGER_LOG"):
                         text = f"**#MANAGER_LOG\n\nChat:** `{get_display_name(ult.chat)}` `{ult.chat_id}`"
                         text += f"\n**Replied :** `{ult.is_reply}`\n**Command :** {ult.text}\n\n**Error :** `{er}`"
@@ -475,7 +462,7 @@ def ultroid_cmd(
                             return await asst.send_message(
                                 chat, text, link_preview=False
                             )
-                        except Exception as er:
+                        except Exception as er:  # noqa: BLE001 - failure notices must survive without logging credential-bearing exceptions
                             LOGS.exception(er)
                     LOGS.info(f"• MANAGER [{ult.chat_id}]:")
                     LOGS.exception(er)

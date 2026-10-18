@@ -21,12 +21,13 @@ from telethon.errors.rpcerrorlist import FilePartLengthInvalidError, MediaEmptyE
 from telethon.tl.types import DocumentAttributeAudio, DocumentAttributeVideo
 from telethon.tl.types import InputWebDocument as wb
 
-from pyUltroid.fns.ytdl import FormatInfo, dler, get_formats
-from custom.tg import ikm
 from custom.fmt import fmtmsg, rawhtml
+from custom.tg import ikm
+from pyUltroid._core.events import InlineResultBuilder
+from pyUltroid.fns import fns
+from pyUltroid.fns.ytdl import FormatInfo, dler, get_formats
 
 from . import LOGS, asst, callback, in_pattern, udB
-from pyUltroid.fns import fns
 
 try:
     from youtubesearchpython import VideosSearch
@@ -41,17 +42,17 @@ BACK_BUTTON = {}
 
 
 def _yt_format_buttons(listt: list[FormatInfo]) -> Any:
-    """Build the format-selection keyboard for a ``ytdl:(.*)`` result.
+    """Build the format-selection keyboard for a ytdl:(.*) result.
 
-    Local reimplementation of ``pyUltroid.fns.ytdl.get_buttons()`` (core,
-    out of scope for this rewrite) so the buttons go through :func:`ikm`
+    Local reimplementation of pyUltroid.fns.ytdl.get_buttons() (core,
+    out of scope for this rewrite) so the buttons go through :func:ikm
     for consistent styling instead of core's raw, unstyled
-    ``Button.inline`` calls. Deliberately keeps the same literal
-    ``ytdownload:<type>:<id>:<ytid>[:<ext>]`` / ``ytdl_back:<id>`` token
-    format as core (not migrated to the ``assistant:`` colon model — see
-    the ``ytdl:`` / ``ytdl_back:`` note in the module docstring above).
-    ``listt`` is the :class:`pyUltroid.fns.ytdl.FormatInfo` list returned by
-    :func:`get_formats`.
+    Button.inline calls. Deliberately keeps the same literal
+    ytdownload:<type>:<id>:<ytid>[:<ext>] / ytdl_back:<id> token
+    format as core (not migrated to the assistant: colon model   see
+    the ytdl: / ytdl_back: note in the module docstring above).
+    listt is the :class:pyUltroid.fns.ytdl.FormatInfo list returned by
+    :func:get_formats.
     """
     id_ = listt[0].ytid
 
@@ -77,9 +78,9 @@ def _yt_format_buttons(listt: list[FormatInfo]) -> Any:
     if row:
         rows.append(row)
 
-    rows.append([("« Back", f"ytdl_back:{id_}", "danger")])
+    rows.append([("Back", f"ytdl_back:{id_}", None)])
 
-    return ikm(rows, icon=True)
+    return ikm(rows, icon=False)
 
 
 @in_pattern("yt", owner=True)
@@ -87,19 +88,13 @@ async def _(event: Any) -> None:
     try:
         string = event.text.split(" ", maxsplit=1)[1]
     except IndexError:
-        fuk = await event.builder.article(
+        fuk = await InlineResultBuilder(event).article(
             title="Search Something",
             thumb=wb(ytt, 0, "image/jpeg", []),
-            text=fmtmsg("YouTube Search 🔍", msgs="You didn't search anything."),
+            text=fmtmsg("YouTube Search ", msgs="You didn't search anything."),
             buttons=ikm(
-                [
-                    [
-                        Button.switch_inline(
-                            "Search Again 🔍", query="yt ", same_peer=True
-                        )
-                    ]
-                ],
-                icon=True,
+                [[Button.switch_inline("Search Again ", query="yt ", same_peer=True)]],
+                icon=False,
             ),
         )
         await event.answer([fuk])
@@ -125,7 +120,7 @@ async def _(event: Any) -> None:
         thumb = f"https://i.ytimg.com/vi/{ids}/hqdefault.jpg"
 
         text = fmtmsg(
-            "YouTube Downloader 📥",
+            "YouTube Downloader ",
             {
                 "Title": rawhtml(f"<a href='{link}'>{html.escape(str(title))}</a>"),
                 "Duration": duration,
@@ -141,19 +136,17 @@ async def _(event: Any) -> None:
         buttons = ikm(
             [
                 [
-                    ("Audio 🎧", f"ytdl:audio:{ids}", "primary"),
-                    ("Video 🎥", f"ytdl:video:{ids}", "primary"),
+                    ("Audio ", f"ytdl:audio:{ids}", "primary"),
+                    ("Video ", f"ytdl:video:{ids}", "primary"),
                 ],
                 [
+                    Button.switch_inline("Search Again ", query="yt ", same_peer=True),
                     Button.switch_inline(
-                        "Search Again 🔍", query="yt ", same_peer=True
-                    ),
-                    Button.switch_inline(
-                        "Share 🔗", query=f"yt {string}", same_peer=False
+                        "Share ", query=f"yt {string}", same_peer=False
                     ),
                 ],
             ],
-            icon=True,
+            icon=False,
         )
         BACK_BUTTON.update({ids: {"text": text, "buttons": buttons}})
         results.append(
@@ -184,10 +177,10 @@ async def _(e: Any) -> None:
     _buttons = _yt_format_buttons(_data) if _data else None
 
     if _buttons:
-        _text = fmtmsg("YouTube Downloader 📥", msgs="Select your preferred format:")
+        _text = fmtmsg("YouTube Downloader ", msgs="Select your preferred format:")
     else:
         _text = fmtmsg(
-            "Download Error ❌",
+            "Download Error ",
             msgs="Error downloading from YouTube.\nTry restarting your bot.",
         )
 
@@ -259,9 +252,7 @@ async def _(event: Any) -> None:
         else:
             LOGS.error(f"File not found: {filepath}")
             await event.edit(
-                fmtmsg(
-                    "Download Error ❌", msgs="Error: File not found after download."
-                ),
+                fmtmsg("Download Error ", msgs="Error: File not found after download."),
                 parse_mode="html",
             )
             return
@@ -341,9 +332,7 @@ async def _(event: Any) -> None:
         else:
             LOGS.error(f"File not found: {filepath}")
             await event.edit(
-                fmtmsg(
-                    "Download Error ❌", msgs="Error: File not found after download."
-                ),
+                fmtmsg("Download Error ", msgs="Error: File not found after download."),
                 parse_mode="html",
             )
             return
@@ -367,7 +356,7 @@ async def _(event: Any) -> None:
 
     description = description if description != "" else "None"
     text = fmtmsg(
-        "YouTube Downloader 📥",
+        "YouTube Downloader ",
         {
             "Title": rawhtml(
                 f"<a href='https://www.youtube.com/watch?v={vid_id}'>{html.escape(str(title))}</a>"
@@ -381,8 +370,8 @@ async def _(event: Any) -> None:
         msgs=description,
     )
     button = ikm(
-        [[Button.switch_inline("Search More 🔍", query="yt ", same_peer=True)]],
-        icon=True,
+        [[Button.switch_inline("Search More ", query="yt ", same_peer=True)]],
+        icon=False,
     )
 
     try:
@@ -413,7 +402,7 @@ async def _(event: Any) -> None:
 async def ytdl_back(event: Any) -> None:
     id_ = event.data_match.group(1).decode("utf-8")
     if not BACK_BUTTON.get(id_):
-        return await event.answer("Query Expired! Search again 🔍")
+        return await event.answer("Query Expired! Search again ")
 
     text_data = BACK_BUTTON[id_]["text"]
     btns = BACK_BUTTON[id_]["buttons"]

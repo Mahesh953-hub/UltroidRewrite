@@ -34,6 +34,8 @@ from pyUltroid.startup.logger import LOGS
 # ── Type alias ──────────────────────────────────────────────────────────────
 
 ImageInput = Union[bytes, str, "Path", "BytesIO", Any]  # Any = PIL.Image
+MAX_IMAGE_BYTES = 32 * 1024 * 1024
+MAX_IMAGE_PIXELS = 16_000_000
 
 
 # ── ImageResult ────────────────────────────────────────────────────────────
@@ -134,7 +136,7 @@ class ImagePipeline:
 
     @staticmethod
     def _pil():
-        from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance
+        from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
         return Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance
 
@@ -163,9 +165,13 @@ class ImagePipeline:
                 img = src
 
             elif isinstance(src, (bytes, bytearray)):
+                if len(src) > MAX_IMAGE_BYTES:
+                    raise ValueError(f"Image input exceeds {MAX_IMAGE_BYTES} bytes")
                 img = Image.open(BytesIO(src))
 
             elif isinstance(src, BytesIO):
+                if src.getbuffer().nbytes > MAX_IMAGE_BYTES:
+                    raise ValueError(f"Image input exceeds {MAX_IMAGE_BYTES} bytes")
                 src.seek(0)
                 img = Image.open(src)
 
@@ -173,10 +179,16 @@ class ImagePipeline:
                 src = str(src)
                 if src.startswith("data:"):
                     # data URI: data:image/png;base64,....
-                    header, data = src.split(",", 1)
+                    _, data = src.split(",", 1)
+                    if len(data) > (MAX_IMAGE_BYTES * 4 // 3) + 4:
+                        raise ValueError(f"Image input exceeds {MAX_IMAGE_BYTES} bytes")
                     raw = base64.b64decode(data)
+                    if len(raw) > MAX_IMAGE_BYTES:
+                        raise ValueError(f"Image input exceeds {MAX_IMAGE_BYTES} bytes")
                     img = Image.open(BytesIO(raw))
                 elif os.path.exists(src):
+                    if os.path.getsize(src) > MAX_IMAGE_BYTES:
+                        raise ValueError(f"Image input exceeds {MAX_IMAGE_BYTES} bytes")
                     img = Image.open(src)
                 else:
                     return ImageResult(
@@ -189,6 +201,11 @@ class ImagePipeline:
                     duration_ms=(time.time() - t0) * 1000,
                 )
 
+            width, height = img.size
+            if width * height > MAX_IMAGE_PIXELS:
+                raise ValueError(
+                    f"Image dimensions exceed the {MAX_IMAGE_PIXELS}-pixel limit"
+                )
             img.load()
             return wrap_result(img, t0, ["load"])
 
@@ -214,7 +231,17 @@ class ImagePipeline:
                             error=f"HTTP {resp.status} from {url}",
                             duration_ms=(time.time() - t0) * 1000,
                         )
-                    data = await resp.read()
+                    if (resp.content_length or 0) > MAX_IMAGE_BYTES:
+                        return ImageResult(
+                            error=f"Image input exceeds {MAX_IMAGE_BYTES} bytes",
+                            duration_ms=(time.time() - t0) * 1000,
+                        )
+                    data = await resp.content.read(MAX_IMAGE_BYTES + 1)
+                    if len(data) > MAX_IMAGE_BYTES:
+                        return ImageResult(
+                            error=f"Image input exceeds {MAX_IMAGE_BYTES} bytes",
+                            duration_ms=(time.time() - t0) * 1000,
+                        )
             result = self.load(data)
             result.op_chain = ["load_url", url[:50]]
             return result
@@ -241,6 +268,14 @@ class ImagePipeline:
             if not (hasattr(msg, "media") and msg.media):
                 return ImageResult(
                     error="No media in message",
+                    duration_ms=(time.time() - t0) * 1000,
+                )
+
+            file_info = getattr(msg, "file", None)
+            file_size = getattr(file_info, "size", 0) or 0
+            if file_size > MAX_IMAGE_BYTES:
+                return ImageResult(
+                    error=f"Image input exceeds {MAX_IMAGE_BYTES} bytes",
                     duration_ms=(time.time() - t0) * 1000,
                 )
 
@@ -414,4 +449,3 @@ def from_cv2(arr, t0: float, ops: list[str]) -> ImageResult:
             error="cv2 not available", duration_ms=(time.time() - t0) * 1000
         )
     return wrap_result(Image.fromarray(cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)), t0, ops)
-

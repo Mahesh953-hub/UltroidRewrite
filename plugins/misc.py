@@ -1,4 +1,5 @@
 from pyUltroid.fns import fns
+
 # Ultroid - UserBot
 #
 # This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
@@ -109,7 +110,7 @@ from telethon.tl.types import (
     ReactionCustomEmoji,
 )
 
-from pyUltroid._core.entities import spoiler as _build_spoiler
+from custom.entities import spoiler as _build_spoiler
 
 from . import get_string, ultroid_cmd
 
@@ -470,7 +471,7 @@ async def ascii_cmd(e):
 # ──────────────────────────────────────────────────────────────────────
 # .spoil — send/re-send text behind a spoiler entity (Phase A, A1)
 # ──────────────────────────────────────────────────────────────────────
-# Uses ``pyUltroid._core.entities.spoiler`` (Phase D4) to wrap the text in a
+# Uses ``custom.entities.spoiler`` (Phase D4) to wrap the text in a
 # single ``MessageEntitySpoiler`` spanning it, then sends it with
 # ``parse_mode=None`` + ``formatting_entities=`` so the entity isn't lost to
 # markdown re-parsing.

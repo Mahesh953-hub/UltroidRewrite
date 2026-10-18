@@ -75,9 +75,14 @@ class ImageRenderer:
         """
         t0 = time.time()
         try:
-            from ._errorcard import render_error_card
+            from ._errorcard import ErrorCardRenderer
 
-            img, shown, total, _ = render_error_card(
+            renderer = (
+                self
+                if isinstance(self, ErrorCardRenderer)
+                else ErrorCardRenderer()
+            )
+            img, _, _, _ = renderer.render(
                 title=title,
                 message=message,
                 traceback_text=tb or "",

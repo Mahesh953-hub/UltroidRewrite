@@ -2,8 +2,7 @@
 
 Credential-free unit tests for the MasterClient role-aware registry, per-client
 handler prefixes + dispatcher fan-out, extra SESSION2/SESSION3-style config
-hooks, and the simulated secondary client used in place of a real second
-Telegram session.
+hooks, and test-local Telegram-shaped clients that avoid real sessions.
 """
 
 from __future__ import annotations
@@ -18,6 +17,32 @@ from unittest.mock import patch
 
 import pytest
 from telethon.types import Message, PeerUser, UpdateNewMessage
+
+
+class SimulatedClient:
+    """Picklable test-only client stub; the runtime exposes no such class."""
+
+    def __init__(self, name, role, hndlr="."):
+        self.name = name
+        self.role = role
+        self.HNDLR = hndlr
+        self.DUAL_HNDLR = "/"
+        self.udB = None
+        self.dispatcher = None
+        self.handlers = []
+
+    def add_event_handler(self, handler, event=None):
+        self.handlers.append((handler, event))
+
+    def remove_event_handler(self, handler, event=None):
+        self.handlers = [
+            pair
+            for pair in self.handlers
+            if pair[0] is not handler or (event is not None and pair[1] != event)
+        ]
+
+    async def send_message(self, *args, **kwargs):
+        return None
 
 
 @contextmanager
@@ -78,10 +103,7 @@ def client_mods(monkeypatch):
                 OriginMasterClient,
                 bind_origin,
             )
-            from pyUltroid.startup.BaseClient import (
-                SimulatedClient,
-                _PyTgCallsCompatClient,
-            )
+            from pyUltroid.startup.BaseClient import PyTgCallsClient
             from pyUltroid.startup.dispatcher import CommandDispatcher
 
             # Open the dispatcher owner gate for all simulated clients.
@@ -92,7 +114,7 @@ def client_mods(monkeypatch):
                 OriginMasterClient=OriginMasterClient,
                 bind_origin=bind_origin,
                 SimulatedClient=SimulatedClient,
-                _PyTgCallsCompatClient=_PyTgCallsCompatClient,
+                PyTgCallsClient=PyTgCallsClient,
                 CommandDispatcher=CommandDispatcher,
             )
         finally:
@@ -275,15 +297,15 @@ class TestPerClientHndlrAndFanOut:
 
 
 class TestPickleAndCopyGuard:
-    def test_compat_subclass_is_unpicklable_by_module_name(self, client_mods):
-        compat = object.__new__(client_mods._PyTgCallsCompatClient)
+    def test_pytgcalls_client_is_unpicklable_by_module_name(self, client_mods):
+        compat = object.__new__(client_mods.PyTgCallsClient)
         # Provide the minimal state the instance would normally hold.
         compat.session = types.SimpleNamespace(dc_id=1)
         compat._bot = False
         compat.me = types.SimpleNamespace(bot=False, id=42, first_name="x")
 
-        # The A6 shim re-roots __module__ so py-tgcalls accepts it; pickle uses
-        # that same lookup and cannot find the class in telethon.*.
+        # The current PyTgCallsClient uses the module identity required by the
+        # upstream bridge; pickle cannot resolve it as a Telethon-owned class.
         assert compat.__class__.__module__ == "telethon.client.telegramclient"
         with pytest.raises((AttributeError, pickle.PicklingError)):
             pickle.dumps(compat)
@@ -373,15 +395,18 @@ class TestUltroidCmdFanOut:
 
         decorated = ultroid_cmd(pattern="hello")(hello)
 
-        # The wrapped handler should be registered on every Telegram client.
-        for client in (u1, u2, b1, b2):
+        # The current decorator fans user commands out to each user client,
+        # while avoiding duplicate execution from bot clients in group chats.
+        for client in (u1, u2):
             assert any(
                 handler is decorated for handler, _ in client.handlers
             ), f"handler missing on {client.name}"
+        for client in (b1, b2):
+            assert not any(
+                handler is decorated for handler, _ in client.handlers
+            ), f"duplicate command handler registered on bot client {client.name}"
 
-        # The same clients carry their own dispatchers, so plugin commands are
-        # reachable across all registered clients (legacy direct handlers + the
-        # per-client dispatcher surface introduced in W3-A).
+        # Each current runtime client carries its own bound dispatcher.
         for client in (u1, u2, b1, b2):
             assert client.dispatcher is not None
             assert client.dispatcher._bound is True

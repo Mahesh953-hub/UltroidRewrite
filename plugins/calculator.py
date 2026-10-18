@@ -13,6 +13,7 @@ __doc__ = get_help("help_calculator")
 import re
 
 from custom.tg import ikm
+from pyUltroid._core.events import InlineResultBuilder
 
 from . import asst, callback, get_string, in_pattern, udB, ultroid_cmd
 
@@ -58,7 +59,9 @@ async def icalc(e):
 
 @in_pattern("calc", owner=True)
 async def _(e):
-    calc = e.builder.article("Calc", text=get_string("calc_1"), buttons=lst)
+    calc = await InlineResultBuilder(e).article(
+        "Calc", text=get_string("calc_1"), buttons=lst
+    )
     await e.answer([calc])
 
 

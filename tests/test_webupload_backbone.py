@@ -369,7 +369,7 @@ class ImportSafetyTests(unittest.TestCase):
     def test_no_top_level_pyultroid_imports(self):
         src = Path(ROOT, "pyUltroid", "_core", "webupload.py").read_text()
         # crude but effective: any top-level (column 0) pyUltroid import would
-        # risk a cycle via the _core package's lazy re-export.
+        # risk a cycle through the _core package's direct eager imports.
         offenders = [
             line
             for line in src.splitlines()
@@ -377,18 +377,14 @@ class ImportSafetyTests(unittest.TestCase):
         ]
         self.assertEqual(offenders, [], f"top-level pyUltroid imports: {offenders}")
 
-    def test_core_package_stays_lazy_for_webupload(self):
+    def test_core_package_eagerly_binds_webupload_exports(self):
         import importlib
         import sys
 
-        # Scope the destructive ``sys.modules`` cleanup so it cannot leak into
-        # sibling tests.  Popping every ``pyUltroid._core.*`` entry globally
-        # (without restoring) would evict modules that other test modules
-        # already bound at import time (e.g. ``pyUltroid._core.queue``); a later
-        # lazy re-import via ``__getattr__`` would then build a *second* module
-        # and class identity, breaking the ``is`` checks in
-        # ``test_queue_manager.TestCoreReexport``.  Snapshot + restore mirrors
-        # the ``core_namespace`` pattern in ``test_core_architecture.py``.
+        # Scope the sys.modules cleanup so this cold import cannot evict
+        # modules other tests have already bound (e.g. pyUltroid._core.queue)
+        # and create duplicate module/class identities. Snapshot + restore
+        # mirrors the core_namespace fixture in test_core_architecture.py.
         saved = {
             name: mod
             for name, mod in sys.modules.items()

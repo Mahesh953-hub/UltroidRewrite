@@ -8,6 +8,7 @@
 import asyncio
 import atexit
 import mimetypes
+import multiprocessing
 import os
 import random
 import re
@@ -20,15 +21,14 @@ from functools import partial, wraps
 from traceback import format_exc
 from typing import Any, List, Optional
 from urllib.parse import quote, unquote, urlparse
-from aiohttp import ClientSession as aiohttp_client
-import multiprocessing
-import heroku3
 
+import heroku3
+from aiohttp import ClientSession as aiohttp_client
+from telethon.errors.rpcerrorlist import AuthBytesInvalidError, MediaCaptionTooLongError
 from telethon.helpers import _maybe_await
 from telethon.tl import types
 from telethon.tl.custom import Message
 from telethon.utils import get_display_name
-from telethon.errors.rpcerrorlist import AuthBytesInvalidError, MediaCaptionTooLongError
 
 from .. import LOGS, udB
 
@@ -39,17 +39,19 @@ if udB is not None:
     from ..configs import Var
     from ..dB._core import ADDONS, HELP, LIST, LOADED
 
+from custom import fmtbar, fmtbyte, fmtmsg, fmtsec
+
 from .._misc import CMD_HELP
 from .._misc._wrappers import eod, eor
 from .._misc.keep_safe import KEEP_SAFE
 from ..exceptions import DependencyMissingError
-from . import *
 from ..version import ultroid_version
+from . import *
 from .FastTelethon import download_file as downloadable
 from .FastTelethon import upload_file as uploadable
-from custom import fmtbar, fmtbyte, fmtmsg, fmtsec
 
 HUGGING_TOKEN = os.getenv("HF_TOKEN")
+
 
 class Helper:
     """The helper toolkit: networking, transfers, media info, and process utils.
@@ -250,9 +252,9 @@ class Helper:
         from .. import LOGS
 
         try:
-            from ..updater import updater as _engine
+            from ..updater import up
 
-            diff = await _engine.check()
+            diff = await up.check()
             return bool(diff and diff.has_changes)
         except Exception as er:
             LOGS.warning(f"Update check skipped: {er}")
@@ -718,29 +720,64 @@ class Helper:
         await xx.delete()
 
     async def def_logs(self, ult, file):
-        _sex = await ult.eor("🚀")
-        try:
-            from .tools import get_paste
+        from pathlib import Path
 
-            with open(file) as f:
-                content = f.read()
-            _, _id = await get_paste(content)
-            cap = f"**Ultroid Logs:**\n```{content[:-400]}```"
-            cap += f"\n**[Log pasted here](https://spaceb.in/{_id})**"
-            await _sex.edit(
-                cap,
-                file=file,
+        from ._fns import fns
+
+        _sex = await ult.eor("Preparing log report...")
+        path = Path(file)
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            LOGS.warning(
+                "Could not read log file %s: %s", path.name, type(exc).__name__
             )
-        except MediaCaptionTooLongError:
-            _lines = open(file).readlines()
-            _lines.reverse()
-            xx = "".join(line[:100] for line in _lines[:20])
-            await _sex.edit(f"**Ultroid logs**\n```{xx[:800]}...```", file=file)
-        except:
-            _lines = open(file).readlines()
-            _lines.reverse()
-            xx = "".join(line for line in _lines[:10])
-            await _sex.edit(f"**Ultroid logs**\n```{xx[:800]}...```", file=file)
+            return await _sex.edit("The log file is unavailable.", parse_mode=None)
+
+        if not content.strip():
+            return await _sex.edit("No log output is available yet.", parse_mode=None)
+
+        paste_url = None
+        try:
+            ok, paste_id = await fns.get_paste(content)
+            if ok and paste_id:
+                paste_url = f"https://spaceb.in/{paste_id}"
+        except Exception:  # noqa: BLE001 - paste failure must not block log delivery
+            LOGS.exception("Could not create a paste for the log report")
+
+        if paste_url:
+            caption = f"Ultroid logs are attached. Paste: {paste_url}"
+        else:
+            excerpt = "\n".join(content.splitlines()[-12:])[-600:]
+            caption = f"Paste unavailable. Latest log excerpt:\n{excerpt}"
+
+        try:
+            if path.stat().st_size > 0:
+                # Telegram cannot turn a text message into a media message via
+                # Message.edit(file=...). Send the attachment as a new message.
+                sent = await ult.client.send_file(
+                    ult.chat_id,
+                    file=str(path),
+                    caption=caption,
+                    parse_mode=None,
+                )
+                try:
+                    await _sex.delete()
+                except Exception:  # noqa: BLE001 - the report was already sent
+                    pass
+                return sent
+        except OSError as exc:
+            LOGS.warning(
+                "Could not read log attachment %s: %s", path.name, type(exc).__name__
+            )
+        except Exception:  # noqa: BLE001 - media failure falls back to readable text
+            LOGS.exception("Could not attach the log file")
+
+        try:
+            return await _sex.edit(caption, parse_mode=None)
+        except Exception:  # noqa: BLE001 - report failure must not cascade
+            LOGS.exception("Could not send the log report text")
+            return None
 
 
 No_Flood = {}
@@ -750,6 +787,7 @@ No_Flood = {}
 
 
 installed = Helper.installed
+
 
 def _close_http_session_at_exit():
     """Close the shared session on the process-wide union, not a fresh Helper.
@@ -766,4 +804,3 @@ def _close_http_session_at_exit():
 
 
 atexit.register(_close_http_session_at_exit)
-

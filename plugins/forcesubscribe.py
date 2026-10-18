@@ -20,7 +20,6 @@
         in order to Use ForceSubscribe.
 """
 
-from pyUltroid.dB import db as dbs
 import re
 
 from telethon.errors.rpcerrorlist import ChatAdminRequiredError, UserNotParticipantError
@@ -33,8 +32,9 @@ from telethon.tl.types import (
     User,
 )
 
-
 from custom.tg import ikm
+from pyUltroid._core.events import InlineResultBuilder
+from pyUltroid.dB import db as dbs
 from pyUltroid.fns import fns
 
 from . import (
@@ -98,7 +98,7 @@ async def fcall(e):
     )
 
     res = [
-        await e.builder.article(
+        await InlineResultBuilder(e).article(
             title="forcesub",
             text=text,
             buttons=ikm(

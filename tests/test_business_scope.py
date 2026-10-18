@@ -54,23 +54,47 @@ def client_mods(monkeypatch):
             }.items():
                 monkeypatch.setenv(key, value)
 
-            from pyUltroid.startup.BaseClient import (
-                BusinessCapableClient,
-                UltroidClient,
-            )
+            from pyUltroid.startup.BaseClient import BusinessBotsClient, UltroidClient
             from pyUltroid.startup.business import (
                 _BUSINESS_WRAPPABLE_REQUESTS,
+                BusinessMessageEvent,
                 business_connection_id,
             )
 
             yield types.SimpleNamespace(
-                BusinessCapableClient=BusinessCapableClient,
+                BusinessBotsClient=BusinessBotsClient,
+                BusinessMessageEvent=BusinessMessageEvent,
                 UltroidClient=UltroidClient,
                 business_connection_id=business_connection_id,
                 wrappable=_BUSINESS_WRAPPABLE_REQUESTS,
             )
         finally:
             sys.argv[:] = original_argv
+
+
+def test_business_message_flags_fall_back_to_raw_peer_type(client_mods, monkeypatch):
+    from telethon.tl.types import PeerUser
+
+    monkeypatch.setattr("pyUltroid.ultroid_bot", types.SimpleNamespace(uid=1))
+    message = types.SimpleNamespace(
+        id=42,
+        peer_id=PeerUser(user_id=22),
+        from_id=PeerUser(user_id=22),
+        message="business message",
+        reply_to=types.SimpleNamespace(reply_to_msg_id=5),
+        media=None,
+        entities=None,
+        post=False,
+    )
+    update = types.SimpleNamespace(message=message, connection_id="conn-test")
+
+    event = client_mods.BusinessMessageEvent(update, object())
+
+    assert event.is_private is True
+    assert event.is_group is False
+    assert event.is_channel is False
+    assert event.reply_to_msg_id == 5
+    assert event.is_reply is True
 
 
 class DummyRequest(TLRequest):
@@ -117,11 +141,11 @@ def wrappable_with_dummy(monkeypatch, client_mods):
     )
 
 
-class TestBusinessCapableClient:
+class TestBusinessBotsClient:
     def test_wraps_request_when_business_context_active(
         self, client_mods, capture_telegram_call, wrappable_with_dummy
     ):
-        client = object.__new__(client_mods.BusinessCapableClient)
+        client = object.__new__(client_mods.BusinessBotsClient)
         req = DummyRequest()
         token = client_mods.business_connection_id.set("conn-123")
         try:
@@ -138,7 +162,7 @@ class TestBusinessCapableClient:
     def test_does_not_wrap_when_no_business_context(
         self, client_mods, capture_telegram_call, wrappable_with_dummy
     ):
-        client = object.__new__(client_mods.BusinessCapableClient)
+        client = object.__new__(client_mods.BusinessBotsClient)
         req = DummyRequest()
         asyncio.run(client(req))
 
@@ -148,7 +172,7 @@ class TestBusinessCapableClient:
     def test_non_wrappable_request_left_untouched(
         self, client_mods, capture_telegram_call, wrappable_with_dummy
     ):
-        client = object.__new__(client_mods.BusinessCapableClient)
+        client = object.__new__(client_mods.BusinessBotsClient)
         req = OtherRequest()
         token = client_mods.business_connection_id.set("conn-123")
         try:
@@ -184,11 +208,11 @@ class TestUserClientUntouched:
 
 
 class TestClientFactory:
-    def test_bot_token_uses_business_capable_client(self, client_mods, monkeypatch):
+    def test_bot_token_uses_business_bots_client(self, client_mods, monkeypatch):
         # Bypass UltroidClient.__init__ to avoid any network setup.
         monkeypatch.setattr(client_mods.UltroidClient, "__init__", lambda *a, **k: None)
         client = client_mods.UltroidClient("asst", bot_token="123456:abc")
-        assert isinstance(client, client_mods.BusinessCapableClient)
+        assert isinstance(client, client_mods.BusinessBotsClient)
         assert isinstance(client, client_mods.UltroidClient)
         assert isinstance(client, TelegramClient)
 
@@ -196,4 +220,4 @@ class TestClientFactory:
         monkeypatch.setattr(client_mods.UltroidClient, "__init__", lambda *a, **k: None)
         client = client_mods.UltroidClient("session")
         assert type(client) is client_mods.UltroidClient
-        assert not isinstance(client, client_mods.BusinessCapableClient)
+        assert not isinstance(client, client_mods.BusinessBotsClient)

@@ -29,9 +29,11 @@ from telethon.tl import types
 from telethon.utils import sanitize_parse_mode
 
 import custom
+import custom.entities as entity_helpers
 import custom.tg as tg
 from custom import rich
-from custom.rich import RICH_MD, STYLE_PRESETS
+from custom.entities import RICH_MD
+from custom.rich import STYLE_PRESETS
 from custom.tg import _normalize_icon, _normalize_style, ikm, request_peer_button
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,9 +99,16 @@ def test_ikm_basic_callback_button():
     rows = ikm([("A", "cb")])
     assert isinstance(rows, list) and len(rows) == 1
     btn = rows[0][0]
-    assert isinstance(btn, types.KeyboardButtonCallback)
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeCallback)
     assert btn.text == "A"
-    assert btn.data == b"cb"
+    assert btn.type.data == b"cb"
+
+
+def test_back_buttons_default_to_blue_primary():
+    for spec in (("Back", "back-route"), ("Back", "back-route", None)):
+        btn = ikm([spec])[0][0]
+        assert _styles(btn) == (True, None, None, None)
 
 
 def test_ikm_empty_and_short_inputs_return_none():
@@ -116,7 +125,8 @@ def test_ikm_prebuilt_button_passthrough():
     prebuilt = Button.inline("PB", data="pb")
     rows = ikm([[prebuilt], [("A", "cb")]])
     assert rows[0][0] is prebuilt
-    assert isinstance(rows[1][0], types.KeyboardButtonCallback)
+    assert isinstance(rows[1][0], types.KeyboardInlineButton)
+    assert isinstance(rows[1][0].type, types.InlineButtonTypeCallback)
 
 
 def test_ikm_bare_button_as_row_passes_through():
@@ -125,8 +135,9 @@ def test_ikm_bare_button_as_row_passes_through():
     rows = ikm([prebuilt, ("B", "cb")])
     assert rows[0] == [prebuilt]
     assert rows[0][0] is prebuilt
-    assert isinstance(rows[1][0], types.KeyboardButtonCallback)
-    assert rows[1][0].data == b"cb"
+    assert isinstance(rows[1][0], types.KeyboardInlineButton)
+    assert isinstance(rows[1][0].type, types.InlineButtonTypeCallback)
+    assert rows[1][0].type.data == b"cb"
 
 
 def test_ikm_bare_button_as_whole_input_passes_through():
@@ -154,6 +165,7 @@ def test_ikm_url_button():
     rows = ikm([("G", "url", "https://example.com")])
     btn = rows[0][0]
     assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeUrl)
     assert btn.type.url == "https://example.com"
 
 
@@ -187,8 +199,9 @@ def test_ikm_unknown_style_degrades_to_default():
 def test_ikm_auth_buy_game_branch_unchanged():
     rows = ikm([("pay", "buy", "invoice")])
     btn = rows[0][0]
-    assert isinstance(btn, types.KeyboardButtonCallback)
-    assert btn.data == b"invoice"
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeCallback)
+    assert btn.type.data == b"invoice"
 
 
 def test_ikm_smoke_markup_still_builds():
@@ -230,6 +243,7 @@ def test_ikm_url_button_style_and_icon():
     """The fork styles URL buttons too; ikm must pass style/icon through."""
     btn = ikm([("Link", "url", "https://x.com", "success", 456)])[0][0]
     assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeUrl)
     assert _styles(btn) == (None, None, True, 456)
 
 
@@ -253,13 +267,14 @@ def test_ikm_user_tuple_deliberate_inline_fallback():
     """On the pinned fork, ("…", "user", uid) is an inline callback carrying
     the user id as callback data — the historical behaviour, now deliberate."""
     btn = ikm([("me?", "user", 42)])[0][0]
-    assert isinstance(btn, types.KeyboardButtonCallback)
-    assert btn.data == b"42"
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeCallback)
+    assert btn.type.data == b"42"
 
 
 def test_ikm_user_tuple_without_id_falls_back_to_literal():
     btn = ikm([("me?", "user")])[0][0]
-    assert btn.data == b"user"
+    assert btn.type.data == b"user"
 
 
 def test_ikm_user_tuple_uses_native_helper_when_available(monkeypatch):
@@ -283,25 +298,26 @@ def test_ikm_user_tuple_uses_native_helper_when_available(monkeypatch):
 
 def test_request_peer_button_tl_shape():
     btn = request_peer_button("Pick a user", "user", button_id=3)
-    assert isinstance(btn, types.KeyboardButtonRequestPeer)
+    assert isinstance(btn, types.KeyboardButton)
+    assert isinstance(btn.type, types.ButtonTypeRequestPeer)
     assert btn.text == "Pick a user"
-    assert btn.button_id == 3
-    assert btn.max_quantity == 1
-    assert isinstance(btn.peer_type, types.RequestPeerTypeUser)
+    assert btn.type.button_id == 3
+    assert btn.type.max_quantity == 1
+    assert isinstance(btn.type.peer_type, types.RequestPeerTypeUser)
     assert btn.style is None
 
 
 def test_request_peer_button_kinds_and_prefix():
     chat = request_peer_button("c", "request_chat")
-    assert isinstance(chat.peer_type, types.RequestPeerTypeChat)
+    assert isinstance(chat.type.peer_type, types.RequestPeerTypeChat)
     bcast = request_peer_button("b", "broadcast")
-    assert isinstance(bcast.peer_type, types.RequestPeerTypeBroadcast)
+    assert isinstance(bcast.type.peer_type, types.RequestPeerTypeBroadcast)
 
 
 def test_request_peer_button_peer_kwargs_passthrough():
     btn = request_peer_button("Bots", "user", bot=True, premium=True)
-    assert btn.peer_type.bot is True
-    assert btn.peer_type.premium is True
+    assert btn.type.peer_type.bot is True
+    assert btn.type.peer_type.premium is True
 
 
 def test_request_peer_button_style_and_icon():
@@ -317,16 +333,18 @@ def test_request_peer_button_unknown_kind_raises():
 
 def test_ikm_request_tuple_builds_raw_tl_button():
     btn = ikm([("Pick", "request_user", 5)])[0][0]
-    assert isinstance(btn, types.KeyboardButtonRequestPeer)
-    assert btn.button_id == 5
-    assert btn.max_quantity == 1
+    assert isinstance(btn, types.KeyboardButton)
+    assert isinstance(btn.type, types.ButtonTypeRequestPeer)
+    assert btn.type.button_id == 5
+    assert btn.type.max_quantity == 1
 
 
 def test_ikm_request_tuple_full_form():
     btn = ikm([("Pick", "request_chat", 5, 2, "primary", 9)])[0][0]
-    assert isinstance(btn, types.KeyboardButtonRequestPeer)
-    assert btn.max_quantity == 2
-    assert isinstance(btn.peer_type, types.RequestPeerTypeChat)
+    assert isinstance(btn, types.KeyboardButton)
+    assert isinstance(btn.type, types.ButtonTypeRequestPeer)
+    assert btn.type.max_quantity == 2
+    assert isinstance(btn.type.peer_type, types.RequestPeerTypeChat)
     assert (btn.style.bg_primary, btn.style.icon) == (True, 9)
 
 
@@ -336,7 +354,7 @@ def test_ikm_request_tuple_full_form():
 
 
 def test_emoji_entity_tl_shape():
-    ent = rich.emoji_entity(2, 4, 5210952310187248189)
+    ent = entity_helpers.emoji_entity(2, 4, 5210952310187248189)
     assert isinstance(ent, types.MessageEntityCustomEmoji)
     assert ent.to_dict() == {
         "_": "MessageEntityCustomEmoji",
@@ -351,7 +369,7 @@ def test_emoji_entity_tl_shape():
 
 
 def test_premium_emoji_default_fallback():
-    text, entities = rich.premium_emoji(123)
+    text, entities = entity_helpers.premium_emoji(123)
     assert text == "⭐"
     assert len(entities) == 1
     ent = entities[0]
@@ -359,20 +377,20 @@ def test_premium_emoji_default_fallback():
 
 
 def test_premium_emoji_astral_fallback_uses_utf16_length():
-    text, entities = rich.premium_emoji(123, "😀")  # U+1F600: 1 py char, 2 UTF-16 units
+    text, entities = entity_helpers.premium_emoji(123, "😀")  # U+1F600: 1 py char, 2 UTF-16 units
     assert text == "😀"
     assert entities[0].length == 2
 
 
 def test_premium_emoji_modifier_sequence_fallback():
     # "👍🏽" = U+1F44D U+1F3FD -> 2 py chars, 4 UTF-16 units.
-    text, entities = rich.premium_emoji(7, "👍🏽")
+    text, entities = entity_helpers.premium_emoji(7, "👍🏽")
     assert text == "👍🏽"
     assert entities[0].length == 4
 
 
 def test_with_emojis_offsets_and_fallbacks():
-    text, entities = rich.with_emojis(
+    text, entities = entity_helpers.with_emojis(
         "😀 Status {ok} and {sparkle}",
         {"{ok}": (111, "✅"), "{sparkle}": 222, "{missing}": 333},
     )
@@ -385,10 +403,10 @@ def test_with_emojis_offsets_and_fallbacks():
 
 
 def test_with_emojis_skips_missing_placeholders_and_empty_map():
-    text, entities = rich.with_emojis("plain", {"{x}": 1})
+    text, entities = entity_helpers.with_emojis("plain", {"{x}": 1})
     assert text == "plain" and entities == []
-    assert rich.with_emojis("plain", {}) == ("plain", [])
-    assert rich.with_emojis("plain", None) == ("plain", [])
+    assert entity_helpers.with_emojis("plain", {}) == ("plain", [])
+    assert entity_helpers.with_emojis("plain", None) == ("plain", [])
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -396,21 +414,14 @@ def test_with_emojis_skips_missing_placeholders_and_empty_map():
 # ──────────────────────────────────────────────────────────────────────────
 
 
-def test_mdv3_parse_mode_registration():
-    """The fork (pin f029220+) registers "mdv3"/"markdownv3" as parse-mode
-    strings; older pins raise ValueError. Instance-passing (``RICH_MD``)
-    must work on every pin, so it stays the canonical path in this repo."""
-    try:
-        mode = sanitize_parse_mode("mdv3")
-    except ValueError:
-        mode = None  # older fork pin — instance-passing still required
-    else:
-        assert hasattr(mode, "parse") and hasattr(mode, "unparse")
+def test_mdv3_parser_is_typed_for_the_pinned_layer():
+    """Use the pinned MarkdownV3 parser directly, without availability wrappers."""
     assert sanitize_parse_mode(RICH_MD) is RICH_MD
+    assert not hasattr(RICH_MD, "available")
 
 
 def test_parse_rich_mdv3_premium_emoji_link():
-    text, entities = rich.parse_rich("[😀](emoji/5210952310187248189)", "mdv3")
+    text, entities = entity_helpers.parse_rich("[😀](emoji/5210952310187248189)", "mdv3")
     assert text == "😀"
     custom = [e for e in entities if isinstance(e, types.MessageEntityCustomEmoji)]
     assert len(custom) == 1
@@ -420,7 +431,7 @@ def test_parse_rich_mdv3_premium_emoji_link():
 
 def test_parse_rich_mdv3_styles_and_spoiler():
     # New fork contract: "||...||" is the native spoiler delimiter.
-    text, entities = rich.parse_rich("**b** ||secret||", "mdv3")
+    text, entities = entity_helpers.parse_rich("**b** ||secret||", "mdv3")
     assert text == "b secret"
     assert any(isinstance(e, types.MessageEntityBold) for e in entities)
     assert any(isinstance(e, types.MessageEntitySpoiler) for e in entities)
@@ -429,49 +440,49 @@ def test_parse_rich_mdv3_styles_and_spoiler():
 def test_parse_rich_mdv3_pipe_spoiler_delim_is_plain_text():
     # The old [text](spoiler) link form no longer produces a spoiler entity
     # — it now yields a plain MessageEntityTextUrl (a literal "spoiler" URL).
-    text, entities = rich.parse_rich("[secret](spoiler)", "mdv3")
+    text, entities = entity_helpers.parse_rich("[secret](spoiler)", "mdv3")
     assert text == "secret"
     assert not any(isinstance(e, types.MessageEntitySpoiler) for e in entities)
     assert any(isinstance(e, types.MessageEntityTextUrl) for e in entities)
 
 
 def test_parse_rich_mdv3_blockquote():
-    text, entities = rich.parse_rich("> quoted line", "mdv3")
+    text, entities = entity_helpers.parse_rich("> quoted line", "mdv3")
     assert "quoted line" in text
     assert any(isinstance(e, types.MessageEntityBlockquote) for e in entities)
 
 
 def test_parse_rich_html_tg_emoji():
-    text, entities = rich.parse_rich('<tg-emoji emoji-id="999">😀</tg-emoji>', "html")
+    text, entities = entity_helpers.parse_rich('<tg-emoji emoji-id="999">😀</tg-emoji>', "html")
     assert text == "😀"
     assert entities[0].document_id == 999
     assert isinstance(entities[0], types.MessageEntityCustomEmoji)
 
 
 def test_parse_rich_custom_markdown_emoji_link():
-    text, entities = rich.parse_rich("[😀](emoji/123)", "custom")
+    text, entities = entity_helpers.parse_rich("[😀](emoji/123)", "custom")
     assert text == "😀"
     assert isinstance(entities[0], types.MessageEntityCustomEmoji)
     assert entities[0].document_id == 123
 
 
 def test_parse_rich_none_mode_and_passthrough_parser():
-    assert rich.parse_rich("**raw**", None) == ("**raw**", [])
-    assert rich.parse_rich("**b**", RICH_MD)[0] == "b"
+    assert entity_helpers.parse_rich("**raw**", None) == ("**raw**", [])
+    assert entity_helpers.parse_rich("**b**", RICH_MD)[0] == "b"
 
 
 def test_parse_rich_unknown_mode_raises():
     with pytest.raises(ValueError):
-        rich.parse_rich("x", "bbcode")
+        entity_helpers.parse_rich("x", "bbcode")
 
 
 def test_unparse_rich_roundtrip_bold():
-    text, entities = rich.parse_rich("**bold**", "mdv3")
-    assert rich.unparse_rich(text, entities, "mdv3") == "**bold**"
+    text, entities = entity_helpers.parse_rich("**bold**", "mdv3")
+    assert entity_helpers.unparse_rich(text, entities, "mdv3") == "**bold**"
 
 
 def test_unparse_rich_mdv3_custom_emoji_link():
-    out = rich.unparse_rich("😀", [rich.emoji_entity(0, 2, 42)], "mdv3")
+    out = entity_helpers.unparse_rich("😀", [entity_helpers.emoji_entity(0, 2, 42)], "mdv3")
     assert out == "[😀](emoji/42)"
 
 
@@ -483,6 +494,7 @@ def test_unparse_rich_mdv3_custom_emoji_link():
 def test_style_presets_resolve():
     assert rich.resolve_style(preset="ok") == ("success", None)
     assert rich.resolve_style(preset="DANGER") == ("danger", None)
+    assert rich.resolve_style(preset="back") == ("primary", None)
     assert rich.resolve_style(preset="nonexistent") == (None, None)
     assert rich.resolve_style() == (None, None)
 
@@ -495,22 +507,25 @@ def test_resolve_style_explicit_overrides_preset():
 
 def test_button_inline_with_preset():
     btn = rich.button("Confirm", "yes", preset="ok")
-    assert isinstance(btn, types.KeyboardButtonCallback)
-    assert btn.data == b"yes"
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeCallback)
+    assert btn.type.data == b"yes"
     assert _styles(btn) == (None, None, True, None)
 
 
 def test_button_url_with_preset_and_icon():
     btn = rich.button("Docs", url="https://example.com", preset="info", icon=11)
     assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeUrl)
     assert _styles(btn) == (True, None, None, 11)
 
 
 def test_button_request_peer_with_peer_kwargs():
     btn = rich.button("Pick bot", request="user", button_id=4, bot=True)
-    assert isinstance(btn, types.KeyboardButtonRequestPeer)
-    assert btn.button_id == 4
-    assert btn.peer_type.bot is True
+    assert isinstance(btn, types.KeyboardButton)
+    assert isinstance(btn.type, types.ButtonTypeRequestPeer)
+    assert btn.type.button_id == 4
+    assert btn.type.peer_type.bot is True
 
 
 def test_rich_ikm_mixed_dicts_tuples_and_buttons():
@@ -528,6 +543,7 @@ def test_rich_ikm_mixed_dicts_tuples_and_buttons():
     assert _styles(rows[0][0]) == (None, None, True, None)
     assert _styles(rows[0][1]) == (None, True, None, None)
     assert isinstance(rows[1][0], types.KeyboardInlineButton)
+    assert isinstance(rows[1][0].type, types.InlineButtonTypeUrl)
     assert _styles(rows[1][0]) == (True, None, None, None)
     assert rows[2][0] is prebuilt
 

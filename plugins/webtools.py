@@ -13,13 +13,13 @@ behind the ``WEBTOOLS_LIVE`` environment variable so the plugin loads cleanly
 and never performs network I/O unless the operator explicitly opts in.
 """
 
-
 import logging
 import os
 from typing import Any
 
 from telethon.errors import RPCError
 from telethon.tl import functions, types
+from telethon.types import MessageService as _PublicMessageService
 
 from custom.tg import ikm, web_app_button
 from pyUltroid.webserver.miniapp import MINIAPP_URL_KEY, MiniAppStore
@@ -32,6 +32,7 @@ _LOGS = logging.getLogger(__name__)
 # intentionally transient (survives until the next restart) — it is only a demo
 # surface, not persistent state.
 _last_webapp_data: dict[str, Any] = {}
+MAX_CAPTURE_CHARS = 2048
 
 _LIVE_GATE = bool(os.environ.get("WEBTOOLS_LIVE"))
 
@@ -39,7 +40,22 @@ _LIVE_GATE = bool(os.environ.get("WEBTOOLS_LIVE"))
 def _format_data(kind: str, **fields) -> str:
     """Concise summary for a captured web_app event."""
     parts = " ".join(f"{k}={v!r}" for k, v in fields.items())
-    return f"`{kind}` {parts}"
+    summary = f"`{kind}` {parts}"
+    if len(summary) > MAX_CAPTURE_CHARS:
+        summary = summary[: MAX_CAPTURE_CHARS - 14] + "…[truncated]"
+    return summary
+
+
+async def _forward_capture_summary(kind: str, payload: str) -> None:
+    if not LOG_CHANNEL:
+        return
+    try:
+        await ultroid_bot.send_message(
+            LOG_CHANNEL,
+            f"**webtools** `{kind}` captured; payload withheld ({len(payload)} chars).",
+        )
+    except Exception:  # noqa: BLE001 - metadata delivery must not break listeners
+        _LOGS.exception("webtools: failed to forward capture metadata to LOG_CHANNEL")
 
 
 @ultroid_cmd(pattern="webapp( (.*)|$)")
@@ -240,7 +256,7 @@ async def miniapp_cmd(event):
     )
 
 
-@ultroid_cmd(pattern="webappdata$")
+@ultroid_cmd(pattern="webappdata$", owner_only=True)
 async def webappdata_cmd(event):
     """Show the last web_app data captured by the listeners."""
     if not _last_webapp_data:
@@ -255,7 +271,7 @@ async def webappdata_cmd(event):
 def _is_webview_data_action(update) -> bool:
     """Match predicate for service messages carrying web_app data."""
     msg = getattr(update, "message", None)
-    if not isinstance(msg, types.MessageService):
+    if not isinstance(msg, (types.MessageService, _PublicMessageService)):
         return False
     return isinstance(
         msg.action,
@@ -280,13 +296,8 @@ async def on_webapp_data_message(update):
         payload = _format_data(kind, text=action.text)
 
     _last_webapp_data[kind] = payload
-    _LOGS.info("webtools: captured %s", payload)
-
-    if LOG_CHANNEL:
-        try:
-            await ultroid_bot.send_message(LOG_CHANNEL, f"**webtools** {payload}")
-        except Exception:
-            _LOGS.exception("webtools: failed to forward web_app data to LOG_CHANNEL")
+    _LOGS.info("webtools: captured %s (%d chars; payload withheld)", kind, len(payload))
+    await _forward_capture_summary(kind, payload)
 
 
 @ultroid_cmd(
@@ -298,12 +309,5 @@ async def on_webview_result_sent(update):
     kind = update.__class__.__name__
     payload = _format_data(kind, query_id=update.query_id)
     _last_webapp_data[kind] = payload
-    _LOGS.info("webtools: captured %s", payload)
-
-    if LOG_CHANNEL:
-        try:
-            await ultroid_bot.send_message(LOG_CHANNEL, f"**webtools** {payload}")
-        except Exception:
-            _LOGS.exception(
-                "webtools: failed to forward web_view result to LOG_CHANNEL"
-            )
+    _LOGS.info("webtools: captured %s (%d chars; payload withheld)", kind, len(payload))
+    await _forward_capture_summary(kind, payload)

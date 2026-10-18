@@ -35,8 +35,11 @@ class AgentLifecycle:
             pass
 
         try:
-            from ._providers import ollama
+            from ._providers import ProviderRegistry
 
+            ollama = ProviderRegistry().provider_by_name("ollama")
+            if ollama is None:
+                return
             running = await ollama._is_running()
             LOGS.info(
                 f"[AGENT:LIFECYCLE] local Ollama provider: "

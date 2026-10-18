@@ -309,7 +309,11 @@ class UniversalRuntimeTests(unittest.TestCase):
         fake_types = types.SimpleNamespace(
             UpdateBotGuestChatQuery=query_type,
             InputBotInlineResult=lambda **kwargs: ("result", kwargs),
-            InputBotInlineMessageText=lambda **kwargs: ("message", kwargs),
+            InputBotInlineMessageRichMessage=lambda **kwargs: (
+                "rich-message",
+                kwargs,
+            ),
+            InputRichMessageHTML=lambda **kwargs: ("rich-html", kwargs),
         )
         fake_functions = types.SimpleNamespace(
             messages=types.SimpleNamespace(
@@ -335,8 +339,14 @@ class UniversalRuntimeTests(unittest.TestCase):
         result = client.requests[-1][1]["result"]
         self.assertEqual(result[1]["title"], "Chat with Bot")
         self.assertEqual(result[1]["description"], "Tap to start a conversation")
+        send_message = result[1]["send_message"]
+        self.assertEqual(send_message[0], "rich-message")
         self.assertEqual(
-            result[1]["send_message"][1]["message"], "Welcome to Guest Chat!"
+            send_message[1]["rich_message"],
+            (
+                "rich-html",
+                {"html": "<h3>Chat with Bot</h3><p>Welcome to Guest Chat!</p>"},
+            ),
         )
 
     def test_mode_status_reports_unavailable_guest_capability(self):
@@ -530,5 +540,4 @@ class UniversalUnionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

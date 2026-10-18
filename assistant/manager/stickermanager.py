@@ -14,14 +14,12 @@ from telethon.tl.functions.messages import GetStickerSetRequest as GetSticker
 from telethon.tl.functions.messages import UploadMediaRequest
 from telethon.tl.functions.stickers import AddStickerToSetRequest as AddSticker
 from telethon.tl.functions.stickers import CreateStickerSetRequest
-from telethon.tl.types import InputPeerSelf
+from telethon.tl.types import InputPeerSelf, InputStickerSetShortName, User
 from telethon.tl.types import InputStickerSetItem as SetItem
-from telethon.tl.types import InputStickerSetShortName, User
 from telethon.utils import get_display_name, get_input_document
 
 from custom.fmt import fmtmsg
-from pyUltroid.fns.misc import Quotly
-from pyUltroid.fns.tools import TgConverter
+from pyUltroid._core.events import InlineResultBuilder
 from pyUltroid.fns.misc import Quotly
 from pyUltroid.fns.tools import TgConverter
 
@@ -36,7 +34,7 @@ async def kang_cmd(ult):
     if not isinstance(sender, User):
         return
     if not ult.is_reply:
-        return await ult.eor("`Reply to a sticker/photo..`", time=5)
+        return await ult.eor("Reply to a sticker/photo..", time=5)
     reply = await ult.get_reply_message()
     if sender.username:
         pre = sender.username[:4]
@@ -65,9 +63,9 @@ async def kang_cmd(ult):
     elif reply.text:
         dl = await Quotly().create_quotly(reply)
     else:
-        return await ult.eor("`Reply to sticker or text to add it in your pack...`")
+        return await ult.eor("Reply to sticker or text to add it in your pack...")
     if not emoji:
-        emoji = "🏵"
+        emoji = ""
     if dl:
         upl = await ult.client.upload_file(dl)
         file = get_input_document(
@@ -112,7 +110,7 @@ async def kang_cmd(ult):
         udB.set_key("STICKERS", get_)
         return await ult.reply(
             fmtmsg(
-                "Kanged Successfully! 🎉",
+                "Kanged Successfully! ",
                 msgs=f"Emoji: {emoji}\nLink: https://t.me/addstickers/{sn}",
             ),
             parse_mode="html",
@@ -152,17 +150,17 @@ async def kang_cmd(ult):
         udB.set_key("STICKERS", get_)
         return await ult.reply(
             fmtmsg(
-                "Created New Kang Pack! 🆕",
+                "Created New Kang Pack! ",
                 msgs=f"Emoji: {emoji}\nLink: https://t.me/addstickers/{sn}",
             ),
             parse_mode="html",
         )
     except Exception as er:
         LOGS.exception(er)
-        return await ult.reply(fmtmsg("Error ❌", msgs=str(er)), parse_mode="html")
+        return await ult.reply(fmtmsg("Error ", msgs=str(er)), parse_mode="html")
     await ult.reply(
         fmtmsg(
-            "Sticker Added to Pack Successfully ✅",
+            "Sticker Added to Pack Successfully ",
             msgs=f"Link: https://t.me/addstickers/{name}",
         ),
         parse_mode="html",
@@ -206,7 +204,7 @@ async def do_magic(ult):
         f'  <a href="https://t.me/addstickers/{short_name}">{html.escape(title)}</a>'
         for title, short_name in packs
     )
-    text = fmtmsg("Stickers Owned by You! 🏵")
+    text = fmtmsg("Stickers Owned by You! ")
     if links:
         text = f"{text}\n\n{links}"
     await ult.reply(text, parse_mode="html")
@@ -218,15 +216,15 @@ async def packs_inline(e):
     if not names:
         return await e.answer(
             [],
-            switch_pm="No kanged packs yet — reply /kang to a sticker first!",
+            switch_pm="No kanged packs yet   reply /kang to a sticker first!",
             switch_pm_param="start",
         )
     results = [
-        await e.builder.article(
+        await InlineResultBuilder(e).article(
             title=name,
             url=f"https://t.me/addstickers/{name}",
             description="Tap to open this pack",
-            text=f"🏵 [{name}](https://t.me/addstickers/{name})",
+            text=f" [{name}](https://t.me/addstickers/{name})",
         )
         for name in names[:20]
     ]

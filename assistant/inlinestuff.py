@@ -19,41 +19,35 @@ from telethon.tl.alltlobjects import LAYER, tlobjects
 from telethon.tl.types import InputWebDocument as wb
 
 from custom.rich import resolve_style
+from pyUltroid import LOGS, asst
 from pyUltroid._core.buttonkit import button as rich_button
+from pyUltroid._core.events import InlineResultBuilder
 from pyUltroid._core.inlineresults import InlineResults
-from pyUltroid._core.richmsg import RichBlocks, rich_message_html
+from pyUltroid._core.richmsg import RichBlocks, rich_markup_from_blocks
 from pyUltroid._core.webupload import (
     MENU_SERVICES,
     SERVICE_LABELS,
     UploadResult,
 )
 from pyUltroid.fns import fns
-from pyUltroid.fns import fns
+from pyUltroid.fns.tools import _webupload_cache
+from strings import get_string
 
-from . import *
-from . import _ult_cache
+from . import InlinePlugin, _ult_cache, callback, in_pattern
 from ._cbs import cb, cb_pattern
 
-# ──────────────────────────────────────────────────────────────────────────
-# C8 — inline result restyle helpers.
 #
-# ``InlineResults.article_rich()`` (``pyUltroid/_core/inlineresults.py``, D3)
-# already guarantees a plain mdv3 ``article()`` fallback whenever the running
-# Telethon build lacks native Rich Message support (or ``blocks_or_html`` is
-# omitted) — per the rebrand plan's section 10 risk #4, every rich article
-# built below goes through it, never a raw-only path. ``article_rich`` also
-# now delegates its own block rendering straight to
-# ``pyUltroid._core.richmsg`` (the same ``RichBlocks`` model this module
-# builds with), so ``table()``/``expandable()`` blocks render natively
-# on the HTML path and degrade to a readable text grid / heading+body on
-# the plain-text fallback path without any degradation step here.
+# C8   inline result restyle helpers.
 #
-# ``_rich_article`` below only adds what ``article_rich()`` does not do on
-# its own: preserve ``thumb=``/``content=`` — ``article_rich()``'s signature
-# has no such kwarg (unlike the wrapped builder's plain ``article()``), but
-# the raw ``InputBotInlineResult`` it returns still accepts them as
-# attributes.
-# ──────────────────────────────────────────────────────────────────────────
+# InlineResults.article_rich() (pyUltroid/_core/inlineresults.py) emits only
+# native RichMessage articles. Missing rich-message constructors or invalid
+# content are hard errors; this path never falls back to a plain article.
+# Block rendering delegates to pyUltroid._core.richmsg, so table() and
+# expandable() blocks use the same native model as other rich-message callers.
+#
+# _rich_article below additionally preserves inline-result thumb=/content=
+# metadata on the native RichMessage result.
+#
 
 
 async def _rich_article(
@@ -69,24 +63,19 @@ async def _rich_article(
     content=None,
     rtl=False,
 ):
-    """Build one ``article_rich`` inline result from a :class:`RichBlocks`.
+    """Build one article_rich inline result from a :class:RichBlocks.
 
-    Passes *blocks* straight through to ``InlineResults.article_rich``,
-    which renders it natively (tables/expandable sections included) when
-    the running Telethon build supports Rich Messages, and otherwise
-    falls back to a plain mdv3 article via the same block model (risk
-    #4) — so old clients / Telethon builds without Rich Message support
-    just see a normal mdv3 article. ``thumb=``/``content=`` are
-    re-attached after the fact since ``article_rich`` has no such kwarg.
+    Converts *blocks* to native RichMarkup while preserving its file vector,
+    then passes the complete payload to InlineResults.article_rich. Local
+    media that has not already been uploaded to Telegram is rejected by the
+    layer-230 engine; it is never silently dropped. thumb/content are assigned
+    directly on the pinned InputBotInlineResult schema.
     """
-    payload = rich_message_html(blocks, rtl=rtl).html
+    payload = rich_markup_from_blocks(blocks, format="html")
     result = await ires.article_rich(
         title,
         payload,
-        engine="rich",
         format="html",
-        is_premium=False,
-        is_bot=True,
         description=description,
         url=url,
         id=id,
@@ -94,28 +83,22 @@ async def _rich_article(
         rtl=rtl,
     )
     changed = False
-    if thumb is not None and hasattr(result, "thumb"):
+    if thumb is not None:
         result.thumb = thumb
         changed = True
-    if content is not None and hasattr(result, "content"):
+    if content is not None:
         result.content = content
         changed = True
     if changed and id is None:
-        # Keep the fork's deterministic hash-of-bytes id convention
-        # (`InlineResults._finalize_id`) consistent after mutating the
-        # object post-construction.
-        try:
-            result.id = hashlib.sha256(bytes(result)).hexdigest()
-        except Exception:
-            pass
+        result.id = hashlib.sha256(bytes(result)).hexdigest()
     return result
 
 
 def _styled(text, *, data=None, url=None, preset=None):
-    """Style one button via ``buttonkit.button`` (bg-colour presets).
+    """Style one button via buttonkit.button (bg-colour presets).
 
-    Falls back to a plain ``telethon.Button`` if styling itself raises for
-    any reason — ``custom.rich.button`` already degrades style/icon
+    Falls back to a plain telethon.Button if styling itself raises for
+    any reason   custom.rich.button already degrades style/icon
     internally (see its docstring), this is a belt-and-suspenders probe so
     callers below never lose a button entirely over styling.
     """
@@ -130,7 +113,7 @@ def _styled(text, *, data=None, url=None, preset=None):
 
 
 def _styled_switch(text, query, *, same_peer=True, preset=None):
-    """Style a ``switch_inline`` (search-again / share / fork) button."""
+    """Style a switch_inline (search-again / share / fork) button."""
     try:
         style, icon = resolve_style(preset=preset)
         return Button.switch_inline(
@@ -143,9 +126,9 @@ def _styled_switch(text, query, *, same_peer=True, preset=None):
 SUP_BUTTONS = [
     [
         _styled(
-            "• Repo •", url="https://github.com/TeamUltroid/Ultroid", preset="primary"
+            "  Repo  ", url="https://github.com/TeamUltroid/Ultroid", preset="primary"
         ),
-        _styled("• Support •", url="t.me/UltroidSupportChat", preset="default"),
+        _styled("  Support  ", url="t.me/UltroidSupportChat", preset="default"),
     ],
 ]
 
@@ -167,9 +150,7 @@ async def _(e):
         match = e.text.split(" ", maxsplit=1)[1]
     except IndexError:
         blocks = (
-            RichBlocks()
-            .header("OFᴏx🦊Rᴇᴄᴏᴠᴇʀʏ")
-            .paragraph("You didn't search anything")
+            RichBlocks().header("OFoxRecovery").paragraph("You didn't search anything")
         )
         kkkk = await _rich_article(
             ires,
@@ -177,7 +158,7 @@ async def _(e):
             blocks,
             thumb=wb(ofox, 0, "image/jpeg", []),
             buttons=_styled_switch(
-                "Sᴇᴀʀᴄʜ Aɢᴀɪɴ", "ofox ", same_peer=True, preset="default"
+                "Search Again", "ofox ", same_peer=True, preset="default"
             ),
         )
         return await e.answer([kkkk])
@@ -196,7 +177,7 @@ async def _(e):
             release_date = datetime.utcfromtimestamp(data["date"]).strftime("%Y-%m-%d")
             blocks = (
                 RichBlocks()
-                .header(f"OʀᴀɴɢᴇFᴏx Rᴇᴄᴏᴠᴇʀʏ Fᴏʀ {fullname}")
+                .header(f"OrangeFox Recovery For {fullname}")
                 .table(
                     [
                         ["Field", "Value"],
@@ -219,9 +200,9 @@ async def _(e):
                     description=f"{version}\n{release_date}",
                     thumb=wb(ofox, 0, "image/jpeg", []),
                     buttons=[
-                        _styled("Dᴏᴡɴʟᴏᴀᴅ", url=link, preset="primary"),
+                        _styled("Download", url=link, preset="primary"),
                         _styled_switch(
-                            "Sᴇᴀʀᴄʜ Aɢᴀɪɴ", "ofox ", same_peer=True, preset="default"
+                            "Search Again", "ofox ", same_peer=True, preset="default"
                         ),
                     ],
                 )
@@ -235,17 +216,17 @@ async def _(e):
         )
 
 
-#: emoji icon shown on each fl2lnk service button (presentation-only — real
+#: emoji icon shown on each fl2lnk service button (presentation-only   real
 #: custom-emoji document ids are deployment-specific, see buttonkit.py).
 _FL_SERVICE_ICONS = {
-    "catbox": "🐱",
-    "litterbox": "🗑",
-    "file.io": "📄",
-    "0x0.st": "🔗",
-    "transfer": "🚀",
-    "uguu": "💨",
-    "filebin": "🗄",
-    "siasky": "🌐",
+    "catbox": "",
+    "litterbox": "",
+    "file.io": "",
+    "0x0.st": "",
+    "transfer": "",
+    "uguu": "",
+    "filebin": "",
+    "siasky": "",
 }
 
 
@@ -272,7 +253,7 @@ async def fl2lnk_command(event):
     buttons = []
     row_btns = []
     for key in MENU_SERVICES:
-        icon = _FL_SERVICE_ICONS.get(key, "📤")
+        icon = _FL_SERVICE_ICONS.get(key, "")
         row_btns.append(
             _styled(
                 f"{icon} {SERVICE_LABELS.get(key, key)}",
@@ -287,7 +268,7 @@ async def fl2lnk_command(event):
         buttons.append(row_btns)
 
     try:
-        blocks = RichBlocks().header("📁 Upload File").paragraph(filename)
+        blocks = RichBlocks().header(" Upload File").paragraph(filename)
         articles = [
             await _rich_article(
                 ires,
@@ -338,31 +319,31 @@ async def fl_callback(event):
             state["pct"] = pct
             state["t"] = now
             try:
-                await event.edit(f"📤 Uploading `{disp}` on {label}... {pct}%")
+                await event.edit(f" Uploading {disp} on {label}... {pct}%")
             except Exception:
                 pass
 
-    await event.edit(f"📤 Uploading `{disp}` on {label}...")
+    await event.edit(f" Uploading {disp} on {label}...")
     result = await fns.webupload_result(
         int(chat_id), int(msg_id), host, on_progress=on_progress
     )
 
     if isinstance(result, UploadResult):
-        text = f"**Uploaded** `{disp}` **on** `{label}`."
-        buttons = [[_styled("🔗 View", url=result.url, preset="primary")]]
+        text = f"**Uploaded** {disp} **on** {label}."
+        buttons = [[_styled(" View", url=result.url, preset="primary")]]
         if result.delete_url:
-            text += f"\n🗑 Delete: `{result.delete_url}`"
+            text += f"\n Delete: {result.delete_url}"
             if result.delete_note:
                 text += f" ({result.delete_note})"
         if result.expires:
-            text += f"\n⏳ Expires: {result.expires}"
+            text += f"\n Expires: {result.expires}"
         await event.edit(text, buttons=buttons, link_preview=False)
         try:
             os.remove(f"resources/downloads/{disp}")
         except FileNotFoundError:
             pass
     else:
-        await event.edit(f"Failed to upload `{disp}` on {label}. Error: {result}")
+        await event.edit(f"Failed to upload {disp} on {label}. Error: {result}")
 
 
 @in_pattern("repo", owner=True)
@@ -372,7 +353,7 @@ async def repo(e):
         RichBlocks()
         .header("Ultroid Userbot")
         .list(["Userbot", "Telethon"])
-        .paragraph("• **ULTROID USERBOT** •")
+        .paragraph("  **ULTROID USERBOT**  ")
     )
     res = [
         await _rich_article(
@@ -403,22 +384,22 @@ async def gsearch(q_event):
             link = i["link"]
             desc = i["description"]
             searcher.append(
-                await q_event.builder.article(
+                await InlineResultBuilder(q_event).article(
                     title=title,
                     description=desc,
                     thumb=wb(gugirl, 0, "image/jpeg", []),
-                    text=f"**Gᴏᴏɢʟᴇ Sᴇᴀʀᴄʜ**\n\n**••Tɪᴛʟᴇ••**\n`{title}`\n\n**••Dᴇsᴄʀɪᴘᴛɪᴏɴ••**\n`{desc}`",
+                    text=f"**Google Search**\n\n**  Title  **\n{title}\n\n**  Description  **\n{desc}",
                     link_preview=False,
                     buttons=[
-                        [Button.url("Lɪɴᴋ", url=f"{link}")],
+                        [Button.url("Link", url=f"{link}")],
                         [
                             Button.switch_inline(
-                                "Sᴇᴀʀᴄʜ Aɢᴀɪɴ",
+                                "Search Again",
                                 query="go ",
                                 same_peer=True,
                             ),
                             Button.switch_inline(
-                                "Sʜᴀʀᴇ",
+                                "Share",
                                 query=f"go {match}",
                                 same_peer=False,
                             ),
@@ -449,24 +430,24 @@ async def _(e):
         title = a.get("title")
         desc = a.get("snippet")
         link = a.get("link")
-        text = f"**••Tɪᴛʟᴇ••** `{title}`\n\n"
-        text += f"**Dᴇsᴄʀɪᴘᴛɪᴏɴ** `{desc}`"
+        text = f"**  Title  ** {title}\n\n"
+        text += f"**Description** {desc}"
         modss.append(
-            await e.builder.article(
+            await InlineResultBuilder(e).article(
                 title=title,
                 description=desc,
                 text=text,
                 link_preview=True,
                 buttons=[
-                    [Button.url("Dᴏᴡɴʟᴏᴀᴅ", url=f"{link}")],
+                    [Button.url("Download", url=f"{link}")],
                     [
                         Button.switch_inline(
-                            "Mᴏʀᴇ Mᴏᴅs",
+                            "More Mods",
                             query="mods ",
                             same_peer=True,
                         ),
                         Button.switch_inline(
-                            "Sʜᴀʀᴇ",
+                            "Share",
                             query=f"mods {quer}",
                             same_peer=False,
                         ),
@@ -520,13 +501,13 @@ async def _(e):
                 description=dev,
                 thumb=wb(z["icon"], 0, "image/jpeg", []),
                 buttons=[
-                    [_styled("Lɪɴᴋ", url=url, preset="primary")],
+                    [_styled("Link", url=url, preset="primary")],
                     [
                         _styled_switch(
-                            "Mᴏʀᴇ Aᴘᴘs", "app ", same_peer=True, preset="default"
+                            "More Apps", "app ", same_peer=True, preset="default"
                         ),
                         _styled_switch(
-                            "Sʜᴀʀᴇ", f"app {f}", same_peer=False, preset="default"
+                            "Share", f"app {f}", same_peer=False, preset="default"
                         ),
                     ],
                 ],
@@ -623,7 +604,7 @@ async def piston_run(event):
         ),
         buttons=_styled_switch("Fork", event.text, same_peer=True, preset="default"),
     )
-    await event.answer([result], switch_pm="• Piston •", switch_pm_param="start")
+    await event.answer([result], switch_pm="  Piston  ", switch_pm_param="start")
 
 
 FDROID_ = {}
@@ -639,7 +620,7 @@ async def do_magic(event):
         )
     if FDROID_.get(match):
         return await event.answer(
-            FDROID_[match], switch_pm=f"• Results for {match}", switch_pm_param="start"
+            FDROID_[match], switch_pm=f"  Results for {match}", switch_pm_param="start"
         )
     link = "https://search.f-droid.org/?q=" + match.replace(" ", "+")
     content = await fns.async_searcher(link, re_content=True)
@@ -667,14 +648,14 @@ async def do_magic(event):
                 content=imga,
                 buttons=[
                     _styled(
-                        "• Download •",
+                        "  Download  ",
                         data=cb(
                             "assistant", "fdroid", dat["href"].split("packages/")[-1]
                         ),
                         preset="primary",
                     ),
                     _styled_switch(
-                        "• Share •", event.text, same_peer=False, preset="default"
+                        "  Share  ", event.text, same_peer=False, preset="default"
                     ),
                 ],
             )
@@ -703,7 +684,7 @@ async def twitter_search(event):
     try:
         return await event.answer(
             _ult_cache["twitter"][match],
-            switch_pm="• Twitter Search •",
+            switch_pm="  Twitter Search  ",
             switch_pm_param="start",
         )
     except KeyError:
@@ -742,7 +723,7 @@ async def twitter_search(event):
                 thumb=thumb,
             )
         )
-    swi_ = f"🐦 Showing {len(reso)} Results!" if reso else "No User Found :("
+    swi_ = f" Showing {len(reso)} Results!" if reso else "No User Found :("
     await event.answer(reso, switch_pm=swi_, switch_pm_param="start")
     if _ult_cache.get("twitter"):
         _ult_cache["twitter"].update({match: reso})
@@ -750,22 +731,22 @@ async def twitter_search(event):
         _ult_cache.update({"twitter": {match: reso}})
 
 
-# Saavn defunct — inline handler removed
+# Saavn defunct   inline handler removed
 
 
 @in_pattern("saavn", owner=True)
 async def savn_s(event):
-    """Saavn music service defunct — inline search removed."""
+    """Saavn music service defunct   inline search removed."""
     ires = InlineResults(event)
     blocks = (
         RichBlocks()
-        .header("🎵 Saavn Search")
+        .header(" Saavn Search")
         .paragraph("This inline search is no longer available.")
     )
     notice = await _rich_article(ires, "Saavn is no longer available", blocks)
     return await event.answer(
         [notice],
-        switch_pm="🎵 Saavn is no longer available",
+        switch_pm=" Saavn is no longer available",
         switch_pm_param="start",
     )
 
@@ -775,33 +756,33 @@ async def inline_tl(ult):
     try:
         match = ult.text.split(maxsplit=1)[1]
     except IndexError:
-        text = f"**Telegram TlObjects Searcher.**\n__(Don't use if you don't know what it is!)__\n\n• Example Usage\n`@{asst.me.username} tl GetFullUserRequest`"
+        text = f"**Telegram TlObjects Searcher.**\n__(Don't use if you don't know what it is!)__\n\n  Example Usage\n@{asst.me.username} tl GetFullUserRequest"
         return await ult.answer(
             [
-                await ult.builder.article(
+                await InlineResultBuilder(ult).article(
                     title="How to Use?",
                     description="Tl Searcher by Ultroid",
                     url="https://t.me/TeamUltroid",
                     text=text,
                 )
             ],
-            switch_pm="Tl Search 🔍",
+            switch_pm="Tl Search ",
             switch_pm_param="start",
         )
     res = []
     for key in tlobjects.values():
         if match.lower() in key.__name__.lower():
             tyyp = "Function" if "tl.functions." in str(key) else "Type"
-            text = f"**Name:** `{key.__name__}`\n"
-            text += f"**Category:** `{tyyp}`\n"
-            text += f"\n`from {key.__module__} import {key.__name__}`\n\n"
+            text = f"**Name:** {key.__name__}\n"
+            text += f"**Category:** {tyyp}\n"
+            text += f"\nfrom {key.__module__} import {key.__name__}\n\n"
             if args := str(inspect.signature(key))[1:][:-1]:
                 text += "**Parameter:**\n"
                 for para in args.split(","):
-                    text += " " * 4 + "`" + para + "`\n"
-            text += f"\n**Layer:** `{LAYER}`"
+                    text += " " * 4 + "" + para + "\n"
+            text += f"\n**Layer:** {LAYER}"
             res.append(
-                await ult.builder.article(
+                await InlineResultBuilder(ult).article(
                     title=key.__name__,
                     description=tyyp,
                     url="https://t.me/TeamUltroid",
@@ -814,16 +795,16 @@ async def inline_tl(ult):
 
 InlinePlugin.update(
     {
-        "Pʟᴀʏ Sᴛᴏʀᴇ Aᴘᴘs": "app telegram",
-        "Mᴏᴅᴅᴇᴅ Aᴘᴘs": "mods minecraft",
-        "Sᴇᴀʀᴄʜ Oɴ Gᴏᴏɢʟᴇ": "go TeamUltroid",
-        "WʜɪSᴘᴇʀ": "wspr @username Hello🎉",
-        "YᴏᴜTᴜʙᴇ Dᴏᴡɴʟᴏᴀᴅᴇʀ": "yt Ed Sheeran Perfect",
+        "Play Store Apps": "app telegram",
+        "Modded Apps": "mods minecraft",
+        "Search On Google": "go TeamUltroid",
+        "WhiSper": "wspr @username Hello",
+        "YouTube Downloader": "yt Ed Sheeran Perfect",
         "Piston Eval": "run javascript console.log('Hello Ultroid')",
-        "OʀᴀɴɢᴇFᴏx🦊": "ofox beryllium",
-        "Tᴡɪᴛᴛᴇʀ Usᴇʀ": "twitter theultroid",
-        "Fᴅʀᴏɪᴅ Sᴇᴀʀᴄʜ": "fdroid telegram",
-        "Sᴀᴀᴠɴ sᴇᴀʀᴄʜ": "saavn",
-        "Tʟ Sᴇᴀʀᴄʜ": "tl",
+        "OrangeFox": "ofox beryllium",
+        "Twitter User": "twitter theultroid",
+        "Fdroid Search": "fdroid telegram",
+        "Saavn search": "saavn",
+        "Tl Search": "tl",
     }
 )

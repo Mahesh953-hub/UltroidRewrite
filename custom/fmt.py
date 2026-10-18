@@ -1,10 +1,21 @@
 import datetime
 import html
+import math
 import sys
 import time as _time
 import traceback
 
 from telethon.custom import Message
+from telethon.extensions import html as _telethon_html
+
+from custom.entities import normalize_parsed
+
+
+class FmtMessage(str):
+    """String-compatible formatter result sent through Layer 230 as HTML."""
+
+    __slots__ = ()
+    __rich_format__ = "html"
 
 
 class FmtKit:
@@ -19,14 +30,26 @@ class FmtKit:
         current: int,
         total: int,
         bars: int = 10,
-        empty: str = chr(9633),
-        fill: str = chr(9635),
+        empty: str = "-",
+        fill: str = "#",
     ) -> str:
-        fillbar = round(current / total * bars)
-        percent = f"{(current / total * 100):.2f}".rstrip("0").rstrip(".")
-        return f"[ {fill * fillbar + empty * (bars - fillbar)} ] {percent}%"
+        bars = int(bars)
+        if bars < 1:
+            raise ValueError("bars must be at least 1")
+        current, total = float(current), float(total)
+        if not math.isfinite(current) or not math.isfinite(total) or total < 0:
+            raise ValueError("current and total must be finite; total cannot be negative")
+        ratio = min(1.0, max(0.0, current / total if total else 0.0))
+        filled = round(ratio * bars)
+        percent = f"{ratio * 100:.2f}".rstrip("0").rstrip(".")
+        return f"[ {fill * filled + empty * (bars - filled)} ] {percent}%"
 
-    def fmtbyte(self, byte: int, si: bool = False) -> str:
+    def fmtbyte(self, byte: int | float, si: bool = False) -> str:
+        byte = float(byte)
+        if not math.isfinite(byte):
+            raise ValueError("byte count must be finite")
+        sign = "-" if byte < 0 else ""
+        byte = abs(byte)
         if si:
             units = (
                 ("TB", 1000**4),
@@ -45,11 +68,9 @@ class FmtKit:
             )
 
         for unit, factor in units:
-            if byte >= factor:
+            if byte >= factor or factor == 1:
                 value = f"{(byte / factor):.2f}".rstrip("0").rstrip(".")
-                return f"{value} {unit}"
-
-        return "-"
+                return f"{sign}{value} {unit}"
 
     def fmtexc(self) -> str:
         exc = traceback.TracebackException(*sys.exc_info())
@@ -68,7 +89,18 @@ class FmtKit:
     def _fmt_value(self, v) -> str:
         if isinstance(v, rawhtml):
             return str(v)
+        if isinstance(v, (tuple, list)) and len(v) == 2:
+            text, entities = normalize_parsed(v)
+            return _telethon_html.unparse(text, entities)
         return f"<code>{html.escape(str(v))}</code>"
+
+    def _escape_or_raw(self, value) -> str:
+        if isinstance(value, rawhtml):
+            return str(value)
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            text, entities = normalize_parsed(value)
+            return _telethon_html.unparse(text, entities)
+        return html.escape(str(value))
 
     def fmtmsg(
         self, head: str, data: object = None, foot: str = "", msgs: str = ""
@@ -88,36 +120,44 @@ class FmtKit:
         elif data:
             body = f"  <code>{html.escape(str(data))}</code>"
 
-        text = [f"<b>{head}</b>"]
+        text = [f"<b>{self._escape_or_raw(head)}</b>"]
         if body:
             text.append(body)
 
         if msgs:
-            text.append(f"<blockquote expandable>{html.escape(str(msgs))}</blockquote>")
+            text.append(f"<blockquote expandable>{self._escape_or_raw(msgs)}</blockquote>")
 
         if foot:
-            text.append(f"<b><blockquote>{html.escape(str(foot))}</blockquote></b>")
+            text.append(f"<b><blockquote>{self._escape_or_raw(foot)}</blockquote></b>")
 
-        return "\n\n".join(text)
+        return FmtMessage("\n\n".join(text))
 
     def fmtsec(self, sec: object, part: int = 3, human: bool = False) -> str:
         if isinstance(sec, datetime.timedelta):
-            delta = sec
+            total_seconds = sec.total_seconds()
         elif isinstance(sec, datetime.datetime):
-            delta = datetime.datetime.now(datetime.UTC) - sec.astimezone(datetime.UTC)
+            total_seconds = (
+                datetime.datetime.now(datetime.UTC) - sec.astimezone(datetime.UTC)
+            ).total_seconds()
         elif isinstance(sec, (float, int)):
-            delta = datetime.timedelta(seconds=sec)
+            total_seconds = float(sec)
         else:
-            raise TypeError
+            raise TypeError("sec must be a timedelta, datetime, or number")
 
-        total = int(delta.total_seconds())
-        micro = delta.microseconds
+        if not math.isfinite(total_seconds):
+            raise ValueError("duration must be finite")
+        part = int(part)
+        if part < 1:
+            raise ValueError("part must be at least 1")
+        negative = total_seconds < 0
+        total_microseconds = round(abs(total_seconds) * 1_000_000)
+        total, micro = divmod(total_microseconds, 1_000_000)
         units = (
-            ("Week", 60**2 * 24 * 7),
-            ("Day", 60**2 * 24),
-            ("Hour", 60**2),
-            ("Minute", 60),
-            ("Second", 1),
+            ("week", 60**2 * 24 * 7),
+            ("day", 60**2 * 24),
+            ("hour", 60**2),
+            ("minute", 60),
+            ("second", 1),
         )
         parts = []
         for unit, second in units:
@@ -136,7 +176,8 @@ class FmtKit:
             if us and len(parts) < part:
                 parts.append(f"{us} µs")
 
-        return ", ".join(parts) if parts else "-"
+        result = ", ".join(parts) if parts else "0 seconds"
+        return f"-{result}" if negative else result
 
     async def prog(
         self, current: int, total: int, event: Message, title: str = ""
@@ -169,7 +210,7 @@ class FmtKit:
             )
 
             try:
-                await event.edit(text_to_send, parse_mode="v2")
+                await event.edit(text_to_send, parse_mode="html")
             except Exception:
                 pass
 

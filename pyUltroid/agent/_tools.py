@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import time
+from io import BytesIO
 from typing import Any, Dict, FrozenSet, List, Optional
 
 from pyUltroid.startup.logger import LOGS
@@ -34,6 +36,7 @@ TOOL_REQUIRED_CAPS: dict[str, frozenset[str]] = {
     "install_package": frozenset({Cap.RES_INSTALL}),
     "process_image": frozenset({Cap.IMG_PROCESS}),
     "send_message": frozenset({Cap.TG_SEND}),
+    "send_text_file": frozenset({Cap.TG_SEND_FILE}),
     "get_bot_status": frozenset(),  # self-status read
     "remember": frozenset(),  # own memory namespace only (agent:memory:*)
     "web_search": frozenset(),  # outbound read-only HTTP GET
@@ -65,6 +68,7 @@ DEFAULT_AGENT_CAPS: frozenset[str] = frozenset(
         Cap.PLUGIN_READ,
         Cap.UPDATE_READ,
         Cap.TG_SEND,
+        Cap.TG_SEND_FILE,
         Cap.TG_READ,
         Cap.AGENT_SPAWN,
         Cap.IMG_PROCESS,
@@ -299,9 +303,10 @@ TOOL_SCHEMAS: list[dict] = [
         "function": {
             "name": "send_message",
             "description": (
-                "Send a Telegram message to a chat as the userbot. Supports "
-                "Markdown formatting. Use to deliver results, notify, or "
-                "reply in another chat."
+                "Send an ordinary plain-text Telegram message as the userbot. "
+                "This tool never sends a native RichMessage. Use tg_route_send "
+                "with rich=true only when native formatting is needed and the "
+                "selected account is a bot or confirmed Premium user."
             ),
             "parameters": {
                 "type": "object",
@@ -312,10 +317,43 @@ TOOL_SCHEMAS: list[dict] = [
                     },
                     "text": {
                         "type": "string",
-                        "description": "Message text (supports Markdown).",
+                        "description": "Plain-text message body.",
                     },
                 },
                 "required": ["chat_id", "text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_text_file",
+            "description": (
+                "Create a UTF-8 .txt or .md attachment from the supplied text "
+                "and send it only to the current chat. This uses in-memory "
+                "content; filesystem paths and other destinations are not accepted."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": (
+                            "A simple filename ending in .txt or .md; no path."
+                        ),
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The UTF-8 text to put in the attachment.",
+                    },
+                    "caption": {
+                        "type": "string",
+                        "description": (
+                            "Optional plain-text caption, up to 900 characters."
+                        ),
+                    },
+                },
+                "required": ["filename", "content"],
             },
         },
     },
@@ -402,8 +440,12 @@ TOOL_SCHEMAS: list[dict] = [
                 "Send a Telegram message through the master client router. "
                 "The route chooses which account sends: 'auto' follows the "
                 "ambient routing rules (business connection, then user, then "
-                "bot), or pin 'user', 'bot', or 'business'. Supports reply "
-                "targets and a Telethon parse mode ('md', 'html', or None)."
+                "bot), or pin 'user', 'bot', or 'business'. Sends ordinary plain "
+                "text by default. Set rich=true to request a native RichMessage; "
+                "bots may send these and user accounts require confirmed Telegram "
+                "Premium. Unsupported rich sends are rejected without retry. Set "
+                "rich=false whenever plain text is preferred. For plain sends, "
+                "parse_mode only converts markup to readable text."
             ),
             "parameters": {
                 "type": "object",
@@ -431,8 +473,15 @@ TOOL_SCHEMAS: list[dict] = [
                     "parse_mode": {
                         "type": "string",
                         "description": (
-                            "Telethon parse mode: 'md', 'html', or omit for "
-                            "the client default."
+                            "RichMessage format: 'html' or 'markdown' ('md' is "
+                            "accepted). Omit to detect the format from the text."
+                        ),
+                    },
+                    "rich": {
+                        "type": "boolean",
+                        "description": (
+                            "Use native RichMessage formatting. Default false "
+                            "sends ordinary plain text and is always allowed."
                         ),
                     },
                     "link_preview": {
@@ -762,7 +811,7 @@ class ToolExecutor:
 
     # ── code_search
     async def _tool_code_search(self, query: str) -> dict:
-        from pyUltroid.tracer import searcher
+        from pyUltroid.tracer import tr
 
         result = tr.search.nl_query(query)
         items = []
@@ -816,9 +865,9 @@ class ToolExecutor:
 
     # ── update_check
     async def _tool_update_check(self, apply: bool = False) -> dict:
-        from pyUltroid.updater import updater
+        from pyUltroid.updater import up
 
-        diff = await updater.check()
+        diff = await up.check()
         if diff is None:
             return {"error": "Could not fetch upstream"}
         result = {
@@ -829,7 +878,7 @@ class ToolExecutor:
             "changelog": diff.changelog_text(5),
         }
         if apply and diff.has_changes:
-            state = await updater.apply(diff)
+            state = await up.apply(diff)
             result["applied"] = state.summary()
         return result
 
@@ -924,8 +973,51 @@ class ToolExecutor:
         """Legacy shape kept for compatibility; routes via the master router."""
         from ._tgbridge import send_via_master
 
-        result = await send_via_master(text, chat_id)
+        result = await send_via_master(text, chat_id, rich=False)
         return result if result.get("ok") else {"error": result.get("error")}
+
+    # ── send_text_file
+    async def _tool_send_text_file(
+        self, filename: str, content: str, caption: str | None = None
+    ) -> dict:
+        """Send bounded generated text as an in-memory file to this chat only."""
+        name = str(filename or "").strip()
+        if not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._ -]{0,95}\.(?:txt|md)", name, re.I
+        ):
+            return {"error": "Use a simple .txt or .md filename without a path."}
+        if not isinstance(content, str) or not content.strip() or "\x00" in content:
+            return {"error": "The attachment must contain non-empty plain text."}
+        payload = content.encode("utf-8")
+        if len(payload) > 256 * 1024:
+            return {"error": "Text attachments are limited to 256 KiB."}
+        if caption is not None and (
+            not isinstance(caption, str) or len(caption) > 900
+        ):
+            return {"error": "The plain-text caption must be at most 900 characters."}
+        if self.chat_id in (None, 0, "", "0"):
+            return {"error": "There is no current chat to receive the attachment."}
+
+        attachment = BytesIO(payload)
+        attachment.name = name
+        from ._tgbridge import send_file_via_master
+
+        result = await send_file_via_master(
+            attachment,
+            self.chat_id,
+            caption=caption,
+        )
+        if not result.get("ok"):
+            return {
+                "ok": False,
+                "error": "Telegram could not deliver the text attachment.",
+            }
+        return {
+            "ok": True,
+            "filename": name,
+            "size_bytes": len(payload),
+            "message_id": result.get("message_id"),
+        }
 
     # ── tg_route_send
     async def _tool_tg_route_send(
@@ -936,6 +1028,7 @@ class ToolExecutor:
         reply_to: int | None = None,
         parse_mode: str | None = None,
         link_preview: bool = True,
+        rich: bool = False,
     ) -> dict:
         from ._tgbridge import send_via_master
 
@@ -946,6 +1039,7 @@ class ToolExecutor:
             reply_to=reply_to,
             parse_mode=parse_mode,
             link_preview=link_preview,
+            rich=rich,
         )
 
     # ── tg_read
@@ -969,7 +1063,7 @@ class ToolExecutor:
 
         action = (action or "list").lower()
         if action == "list":
-            from pyUltroid.tracer import plugin_index
+            from pyUltroid.tracer import tr
 
             manifests = _loader.registry.get_active()
             stats = tr.index.stats()
@@ -1137,14 +1231,13 @@ class ToolExecutor:
     # ── get_bot_status
     async def _tool_get_bot_status(self) -> dict:
         try:
-            from pyUltroid import ultroid_bot
-            from pyUltroid.updater import git
-            from pyUltroid.tracer import plugin_index
+            from pyUltroid.updater import up
+            from pyUltroid.tracer import tr
 
             idx = tr.index.stats()
             return {
-                "version": git.current_sha(),
-                "branch": git.current_branch(),
+                "version": up.git.current_sha(),
+                "branch": up.git.current_branch(),
                 "plugins": idx.get("plugins", 0),
                 "handlers": idx.get("handlers", 0),
                 "uptime_info": "available via .uptime command",

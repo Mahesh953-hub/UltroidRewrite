@@ -31,6 +31,7 @@ if udB is not None:
     from ..dB._core import LIST
 
 from . import some_random_headers
+from .command_help import command_syntax
 from .tools import ToolKit
 
 try:
@@ -152,15 +153,23 @@ class MiscKit:
 
     # ----------------------------------------------------
     async def allcmds(self, event, telegraph):
-        txt = ""
-        for z in LIST.keys():
-            txt += f"PLUGIN NAME: {z}\n"
-            for zz in LIST[z]:
-                txt += HNDLR + zz + "\n"
-            txt += "\n\n"
-        t = telegraph.create_page(title="Ultroid All Cmds", content=[txt])
+        lines = [
+            "# Ultroid command index",
+            "Commands are grouped by plugin. Optional input is shown as [arguments].",
+            "",
+        ]
+        for plugin in sorted(LIST, key=str.casefold):
+            lines.extend((f"## {plugin.replace('_', ' ').title()}", ""))
+            lines.extend(
+                f"- `{command_syntax(pattern, HNDLR)}`" for pattern in LIST[plugin]
+            )
+            lines.append("")
+        page = "\n".join(lines).rstrip()
+        t = telegraph.create_page(title="Ultroid Command Index", content=[page])
         await eor(
-            event, f"All Ultroid Cmds : [Click Here]({t['url']})", link_preview=False
+            event,
+            f"**Command index**\n\n[Browse all commands]({t['url']})",
+            link_preview=False,
         )
 
     async def ReTrieveFile(self, input_file_name):

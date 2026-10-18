@@ -5,6 +5,7 @@
 # PLease read the GNU Affero General Public License in
 # <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
 
+import base64
 import os
 import subprocess
 import sys
@@ -16,7 +17,6 @@ from .. import LOGS, USER_MODE, asst, udB, ultroid_bot
 from .._core.loader import (
     AsyncPluginLoader,
     register_errors_command,
-    retry_persisted_errors,
 )
 from . import *
 from .utils import load_addons
@@ -34,6 +34,69 @@ def _async_load(loader, **kwargs):
         if asst is not None:
             return asst.run_in_loop(coro)
         raise
+
+
+def _pull_addons_if_safe(addons_dir: str, git_token: str | None) -> bool:
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=addons_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        LOGS.warning("[loader] skipping add-on update: checkout status unavailable")
+        return False
+
+    if status.returncode:
+        LOGS.warning("[loader] skipping add-on update: checkout status failed")
+        return False
+
+    dirty_paths = sum(bool(line.strip()) for line in status.stdout.splitlines())
+    if dirty_paths:
+        LOGS.warning(
+            "[loader] skipping add-on update: preserving %d local worktree paths",
+            dirty_paths,
+        )
+        return False
+
+    if not git_token or git_token == "None":
+        LOGS.warning("[loader] skipping add-on update: GIT_TOKEN is not configured")
+        return False
+
+    env = os.environ.copy()
+    try:
+        config_index = int(env.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        config_index = 0
+    encoded_auth = base64.b64encode(f"x-access-token:{git_token}".encode()).decode()
+    env["GIT_CONFIG_COUNT"] = str(config_index + 1)
+    env[f"GIT_CONFIG_KEY_{config_index}"] = "http.https://github.com/.extraheader"
+    env[f"GIT_CONFIG_VALUE_{config_index}"] = f"AUTHORIZATION: basic {encoded_auth}"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+
+    try:
+        result = subprocess.run(
+            ["git", "pull", "-q"],
+            cwd=addons_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        LOGS.warning("[loader] add-on update failed; continuing with local checkout")
+        return False
+    if result.returncode:
+        LOGS.warning(
+            "[loader] add-on update failed (exit %s); continuing with local checkout",
+            result.returncode,
+        )
+        return False
+    return True
 
 
 def load_other_plugins(
@@ -98,7 +161,7 @@ def load_other_plugins(
                     shell=True,
                 )
         else:
-            subprocess.run("cd addons && git pull -q && cd ..", shell=True)
+            _pull_addons_if_safe("addons", git_token)
 
         # Must change it
         if not os.path.exists("addons"):
@@ -151,7 +214,9 @@ def load_other_plugins(
 
     # ── Fallback system: retry errored plugins (max 3 attempts this startup)
     try:
-        ultroid_bot.run_in_loop(retry_persisted_errors(max_retries=3))
+        from ..ultroid import core
+
+        ultroid_bot.run_in_loop(core.loader.retry_persisted_errors(max_retries=3))
     except Exception as exc:
         LOGS.debug(f"[loader] retry_persisted_errors failed: {exc}")
 
@@ -163,9 +228,9 @@ def load_other_plugins(
 
     # ── Tracer code index
     try:
-        from ..tracer import plugin_index
+        from ..tracer import tr
 
-        indexed = plugin_index.index_all()
+        indexed = tr.index.index_all()
         LOGS.info(f"[loader] Plugin index warmed  -  {indexed} plugins indexed.")
     except Exception as exc:
         LOGS.debug(f"[loader] plugin index warm-up failed: {exc}")

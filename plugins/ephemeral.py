@@ -37,35 +37,44 @@ import time
 
 from telethon import utils as _tl_utils
 from telethon.tl import types
-from telethon.tl.functions.ephemeral import (
-    DeleteMessageRequest,
-    SendMessageRequest,
-    GetWelcomeMessagesRequest,
-    DeleteWelcomeMessageRequest,
-    DeleteAllWelcomeMessagesRequest,
-    EditMessageRequest,
-    ReportMessageRequest,
-)
+from telethon.tl.functions import ephemeral as _ephemeral
 from telethon.tl.types import (
     InputRichMessageHTML,
-    RichButtonStyle,
     MessageActionChatAddUser,
     MessageActionChatJoinedByLink,
     MessageActionChatJoinedByRequest,
-    MessageActionChatJoinedViaCommunity,
     MessageActionChatCreate,
     UpdateNewMessage,
     UpdateNewChannelMessage,
 )
 
+DeleteMessageRequest = _ephemeral.DeleteMessageRequest
+SendMessageRequest = _ephemeral.SendMessageRequest
+ReportMessageRequest = _ephemeral.ReportMessageRequest
+MessageActionChatJoinedViaCommunity = getattr(
+    types, "MessageActionChatJoinedViaCommunity", None
+)
+GetWelcomeMessagesRequest = getattr(_ephemeral, "GetWelcomeMessagesRequest", None)
+DeleteWelcomeMessageRequest = getattr(_ephemeral, "DeleteWelcomeMessageRequest", None)
+DeleteAllWelcomeMessagesRequest = getattr(
+    _ephemeral, "DeleteAllWelcomeMessagesRequest", None
+)
+EditMessageRequest = getattr(_ephemeral, "EditMessageRequest", None)
+
 from pyUltroid._core._cbs import cb, cb_pattern
 from pyUltroid._core.events import InlineResultBuilder
 
 from custom.fmt import fmtmsg
-from custom.rich import parse_rich
+from custom.entities import parse_rich
 from custom.tg import ikm
 
 from . import HNDLR, LOGS, callback, eor, in_pattern, ultroid_bot, ultroid_cmd, asst_cmd
+
+
+def _rich_message_html(html):
+    """Build the native layer-230 HTML payload; markup lives on the request."""
+    return InputRichMessageHTML(html=html)
+
 
 # --------------------------------------------------------------------------- #
 #  Delivery primitives                                                        #
@@ -162,14 +171,13 @@ async def _send_strong_whisper(
     for other participants.
     """
     clean, entities = parse_rich(text, "mdv3") if entities is None else (text, entities)
-    rich = InputRichMessageHTML(
+    rich = _rich_message_html(
         html=(
             f"<blockquote expandable>"
             f"<b>🔒 Private Whisper</b>"
             f"</blockquote>\n\n"
             f"{clean}"
         ),
-        style=RichButtonStyle(color=0x5865F2, icon="🔒"),
     )
     return await _send_ephemeral(
         client,
@@ -196,14 +204,13 @@ async def _send_welcome(
     new joiner and the userbot can see it.
     """
     clean, _ = parse_rich(text, "mdv3")
-    rich = InputRichMessageHTML(
+    rich = _rich_message_html(
         html=(
             f"<blockquote expandable>"
             f'<b>👋 Welcome to {getattr(peer, "title", "this chat")}</b>'
             f"</blockquote>\n\n"
             f"{clean}"
         ),
-        style=RichButtonStyle(color=0x2ECC71, icon="👋"),
     )
     return await _send_ephemeral(
         client,
@@ -286,15 +293,14 @@ def _is_join_action(message):
     if isinstance(action, MessageActionChatCreate):
         # creator joined — the creator's id is in the message
         return getattr(message, "from_id", None)
-    if isinstance(
-        action,
-        (
-            MessageActionChatAddUser,
-            MessageActionChatJoinedByLink,
-            MessageActionChatJoinedByRequest,
-            MessageActionChatJoinedViaCommunity,
-        ),
-    ):
+    join_action_types = (
+        MessageActionChatAddUser,
+        MessageActionChatJoinedByLink,
+        MessageActionChatJoinedByRequest,
+    )
+    if MessageActionChatJoinedViaCommunity is not None:
+        join_action_types += (MessageActionChatJoinedViaCommunity,)
+    if isinstance(action, join_action_types):
         users = getattr(action, "users", None)
         if users:
             return users[0]
@@ -303,6 +309,8 @@ def _is_join_action(message):
 
 async def _get_welcome_messages(client, peer):
     """Fetch current welcome messages for *peer*."""
+    if GetWelcomeMessagesRequest is None:
+        return NotImplemented
     try:
         peer_input = await client.get_input_entity(peer)
         req = GetWelcomeMessagesRequest(peer=peer_input, hash=0)
@@ -317,6 +325,8 @@ async def _get_welcome_messages(client, peer):
 
 async def _delete_welcome_message(client, peer, msg_id):
     """Delete a specific welcome message."""
+    if DeleteWelcomeMessageRequest is None:
+        raise NotImplementedError("Deleting welcome messages is unsupported by this Telegram API")
     try:
         peer_input = await client.get_input_entity(peer)
         req = DeleteWelcomeMessageRequest(peer=peer_input, id=msg_id)
@@ -328,6 +338,8 @@ async def _delete_welcome_message(client, peer, msg_id):
 
 async def _delete_all_welcome_messages(client, peer):
     """Delete all welcome messages for *peer*."""
+    if DeleteAllWelcomeMessagesRequest is None:
+        raise NotImplementedError("Deleting welcome messages is unsupported by this Telegram API")
     try:
         peer_input = await client.get_input_entity(peer)
         req = DeleteAllWelcomeMessagesRequest(peer=peer_input)
@@ -339,11 +351,14 @@ async def _delete_all_welcome_messages(client, peer):
 
 async def _edit_welcome_message(client, peer, msg_id, text):
     """Edit an existing welcome message."""
+    if EditMessageRequest is None:
+        raise NotImplementedError("Editing welcome messages is unsupported by this Telegram API")
     try:
         clean, _ = parse_rich(text, "mdv3")
-        rich = InputRichMessageHTML(
+        rich = _rich_message_html(
             html=(f"<blockquote expandable><b>👋 Welcome</b></blockquote>\n\n{clean}"),
-            style=RichButtonStyle(color=0x2ECC71, icon="👋"),
+            color=0x2ECC71,
+            icon="👋",
         )
         peer_input = await client.get_input_entity(peer)
         req = EditMessageRequest(
@@ -622,7 +637,17 @@ async def welcome_cmd(event):
         )
     elif cmd == "list":
         msgs = await _get_welcome_messages(event.client, event.chat_id)
-        if msgs:
+        if msgs is NotImplemented:
+            await eor(
+                event,
+                fmtmsg(
+                    "Welcome",
+                    {"Info": "Listing saved welcome messages is unsupported by this Telegram API"},
+                ),
+                parse_mode="html",
+                time=10,
+            )
+        elif msgs:
             lines = [f"**Welcome messages ({len(msgs)}):**"]
             for m in msgs:
                 mid = getattr(m, "id", "?")

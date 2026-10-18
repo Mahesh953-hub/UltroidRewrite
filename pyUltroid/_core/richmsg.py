@@ -4,120 +4,148 @@
 # This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
 # Please read the GNU Affero General Public License in
 # <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
-"""Dual-engine rich-message builder for the Layer 228 Telethon fork.
+"""Native Telegram RichMessage engine for Telethon TL layer 230.
 
-The legacy engine exports every block as ordinary Telegram text plus entities
-through ``telethon.extensions.markdownv3``.  The rich engine exports the same
-blocks as Telegram-native ``InputRichMessageHTML`` or
-``InputRichMessageMarkdown``.  Normal users therefore retain a useful message
-when rich blocks are unavailable to their account, while Premium users and bots
-can opt into (or automatically select) the server-rendered representation.
+Messages are sent and edited with the raw ``messages.*`` requests and the
+layer-230 ``InputRichMessage`` constructors. There is deliberately no
+legacy/entity downgrade or account-based engine selection.
 """
 
 from __future__ import annotations
 
+import copy
 import html as _html
 import re
-from contextlib import contextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass
-from typing import Any, Literal
 from collections.abc import Sequence
+from dataclasses import dataclass
 from html.parser import HTMLParser
+from typing import Any, Literal
 
 from telethon import utils as _tl_utils
-from telethon.errors import RPCError
 from telethon.extensions import html as _telethon_html
-from telethon.extensions import markdownv3 as _mdv3
 from telethon.tl import functions as _functions
 from telethon.tl import types as _types
 
-from .entities import normalize_parsed
+from custom.entities import normalize_parsed, parse_rich
 
-# ``custom.rich.parse_rich`` turns the fallback dialect into message
-# entities; if the rich extras failed to import (or an old ``custom`` is on
-# the path) every fallback still works, just without entities.
-try:
-    from custom.rich import parse_rich
-except Exception:
-    parse_rich = None
+from .richdebug import call_rich_request
 
-
-Engine = Literal["auto", "legacy", "rich"]
 MessageFormat = Literal["html", "markdown"]
 
+# The Rich Message guide documents these limits; apply them conservatively to
+# the Layer-230 constructors as well, without implying server-side confirmation.
+MAX_RICH_MESSAGE_CHARS = 32_768
+MAX_RICH_MESSAGE_BLOCKS = 500
+MAX_RICH_NESTING_DEPTH = 16
+MAX_RICH_TABLE_COLUMNS = 20
+_RICH_MEDIA_UNSUPPORTED = (
+    "RichMessage photo/document references are unsupported: Telegram rejected "
+    "the tested InputRichFilePhoto/InputRichFileDocument payloads, and no "
+    "accepted native MTProto reference format has been verified"
+)
+
 __all__ = (
-    "LegacyMessage",
-    "RichMarkup",
     "RichBlocks",
+    "RichFile",
+    "RichMarkup",
+    "blocks_to_plain_text",
     "bot_inline_rich_message",
+    "client_can_send_rich_message",
+    "coerce_to_rich_markup",
+    "edit_inline_plain",
     "edit_rich",
-    "has_native_rich_messages",
-    "legacy_message",
-    "rich_message",
-    "rich_message_html",
-    "rich_message_markdown",
-    "rich_sender",
-    "send_rich",
-    "edit_rich",
-    "table_to_text",
     "normalize_blocks",
     "render_blocks_native_html",
-    "render_blocks_fallback_html",
-    "blocks_to_plain_text",
-    "coerce_to_rich_markup",
-    "rich_dispatch_active",
+    "rich_markup_from_blocks",
+    "rich_message",
+    "rich_message_blocks",
+    "rich_message_html",
+    "rich_message_markdown",
+    "send_rich",
+    "table_to_text",
 )
 
 
-_RICH_DISPATCH_DEPTH: ContextVar[int] = ContextVar("ultroid_rich_dispatch_depth", default=0)
+async def client_can_send_rich_message(client: Any) -> bool:
+    """Return whether a Telegram sender is a bot or an identified Premium user.
 
+    Unknown account state is treated as ineligible so callers can deliberately
+    choose plain text before issuing a native RichMessage request.
+    """
+    if client is None:
+        return False
+    route = getattr(client, "route", None)
+    if callable(route):
+        try:
+            routed = route()
+            if routed is not None:
+                client = routed
+        except Exception:  # noqa: BLE001 - unknown route state fails closed
+            pass
+    if getattr(client, "_bot", False):
+        return True
 
-def rich_dispatch_active() -> bool:
-    """Whether a shared rich-engine fallback is calling the raw Telethon API."""
-    return _RICH_DISPATCH_DEPTH.get() > 0
-
-
-@contextmanager
-def _legacy_dispatch():
-    token = _RICH_DISPATCH_DEPTH.set(_RICH_DISPATCH_DEPTH.get() + 1)
-    try:
-        yield
-    finally:
-        _RICH_DISPATCH_DEPTH.reset(token)
-
-
-@dataclass(frozen=True)
-class LegacyMessage:
-    """A normal Telegram message produced by the always-safe legacy engine."""
-
-    text: str
-    entities: list
-    markup: str
-    format: MessageFormat
+    identity = None
+    for name in ("me", "_me", "user"):
+        identity = getattr(client, name, None)
+        if identity is not None:
+            break
+    if identity is None:
+        get_me = getattr(client, "get_me", None)
+        if callable(get_me):
+            try:
+                identity = await get_me()
+            except Exception:  # noqa: BLE001 - inability to verify fails closed
+                return False
+    return bool(
+        identity
+        and (
+            getattr(identity, "bot", False)
+            or getattr(identity, "premium", False)
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
 class RichMarkup:
     """Already-formatted Telegram Rich Message content.
 
-    Unlike :class:`RichBlocks`, this preserves a model's HTML or Markdown
-    structure. HTML is sanitized at the native rendering boundary and its
-    fallback converts tables to a readable text grid.
+    Unlike :class:`RichBlocks`, this preserves caller-supplied HTML or
+    Markdown. Photo/document file references are retained as input data but
+    rejected by the payload builder until an accepted MTProto format is verified.
     """
 
     text: str
     format: MessageFormat = "html"
+    files: tuple[Any, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.text, str):
             raise TypeError("RichMarkup.text must be str")
         object.__setattr__(self, "format", _validate_format(self.format))
+        if not isinstance(self.files, (list, tuple)):
+            raise TypeError("RichMarkup.files must be a sequence")
+        object.__setattr__(self, "files", tuple(self.files))
+
+
+@dataclass(frozen=True, slots=True)
+class RichFile:
+    """Describe a rich-media reference, currently rejected by the engine."""
+
+    id: str
+    media: Any
+    kind: Literal["photo", "document"] = "photo"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", self.id):
+            raise ValueError("RichFile.id must be 1-64 ASCII letters, digits, '_' or '-'")
+        if self.kind not in {"photo", "document"}:
+            raise ValueError("RichFile.kind must be 'photo' or 'document'")
 
 
 _HTML_INPUT_RE = re.compile(
     r"(?is)</?\s*(?:b|strong|i|em|u|s|del|ins|a|code|pre|blockquote|"
-    r"span|tg-spoiler|tg-emoji|br|hr|p|div|h[1-6]|ul|ol|li|table|"
+    r"span|tg-spoiler|tg-emoji|tg-document|figure|figcaption|img|br|hr|p|div|h[1-6]|ul|ol|li|table|"
     r"thead|tbody|tfoot|tr|th|td)\b[^>]*>"
 )
 
@@ -147,7 +175,7 @@ def coerce_to_rich_markup(
                 (value, formatting_entities), fallback=value
             )
             return RichMarkup(_telethon_html.unparse(plain, entities or []), "html")
-        except Exception:
+        except Exception:  # noqa: BLE001 - malformed entity input stays on normal Telethon path
             return None
 
     if parse_mode is None:
@@ -163,13 +191,11 @@ def coerce_to_rich_markup(
     if _HTML_INPUT_RE.search(probe):
         return RichMarkup(value, "html")
 
-    if parse_rich is None:
-        return None
     try:
         plain, entities = normalize_parsed(parse_rich(value, parse_mode), fallback=value)
         markup = _telethon_html.unparse(plain, entities or [])
         return RichMarkup(markup, "html")
-    except Exception:
+    except Exception:  # noqa: BLE001 - parser rejection stays on normal Telethon path
         return None
 
 
@@ -179,10 +205,11 @@ _RICH_TAGS = frozenset(
         "span", "tg-spoiler", "tg-emoji", "blockquote", "p", "div", "br",
         "hr", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li",
         "pre", "code", "table", "caption", "thead", "tbody", "tfoot",
-        "tr", "th", "td", "sub", "sup",
+        "tr", "th", "td", "sub", "sup", "figure", "figcaption", "img",
+        "tg-document",
     }
 )
-_RICH_VOID_TAGS = frozenset({"br", "hr"})
+_RICH_VOID_TAGS = frozenset({"br", "hr", "img"})
 _RICH_DROP_CONTENT = frozenset(
     {"script", "style", "iframe", "object", "svg", "math", "template", "head", "title"}
 )
@@ -191,11 +218,12 @@ _RICH_DROP_CONTENT = frozenset(
 class _RichHTMLSanitizer(HTMLParser):
     """Allow only Telegram rich-text tags and narrowly validated attributes."""
 
-    def __init__(self) -> None:
+    def __init__(self, file_ids: set[str] | None = None) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.stack: list[str] = []
         self.dropped: list[str] = []
+        self.file_ids = file_ids or set()
 
     @staticmethod
     def _safe_href(value: str) -> bool:
@@ -217,10 +245,18 @@ class _RichHTMLSanitizer(HTMLParser):
         if tag in {"html", "body"} or tag not in _RICH_TAGS:
             return
 
-        values = {key.lower(): value for key, value in attrs if value is not None}
+        values = {
+            key.lower(): "" if value is None else value for key, value in attrs
+        }
         safe_attrs: list[tuple[str, str]] = []
         if tag == "a" and values.get("href") and self._safe_href(values["href"]):
             safe_attrs.append(("href", values["href"]))
+        if tag in {"img", "tg-document"} and values.get("src") in self.file_ids:
+            safe_attrs.append(("src", values["src"]))
+        if tag == "img" and values.get("alt"):
+            safe_attrs.append(("alt", values["alt"][:256]))
+        if tag == "img" and "tg-spoiler" in values:
+            safe_attrs.append(("tg-spoiler", ""))
         if tag == "blockquote" and "expandable" in values:
             safe_attrs.append(("expandable", ""))
         if tag == "code":
@@ -240,7 +276,9 @@ class _RichHTMLSanitizer(HTMLParser):
             safe_attrs.append(("emoji-id", values["emoji-id"]))
 
         attr_text = "".join(
-            f' {name}="{_html.escape(value, quote=True)}"'
+            f" {name}"
+            if name in {"expandable", "tg-spoiler"} and value == ""
+            else f' {name}="{_html.escape(value, quote=True)}"'
             for name, value in safe_attrs
         )
         self.parts.append(f"<{tag}{attr_text}>")
@@ -273,37 +311,49 @@ class _RichHTMLSanitizer(HTMLParser):
         return "".join(self.parts)
 
 
-def sanitize_rich_html(text: str) -> str:
+def sanitize_rich_html(text: str, *, file_ids: set[str] | None = None) -> str:
     """Escape text and retain only safe Telegram rich HTML elements."""
     if not isinstance(text, str):
         raise TypeError("rich HTML must be str")
-    parser = _RichHTMLSanitizer()
+    parser = _RichHTMLSanitizer(file_ids=file_ids)
     parser.feed(text)
     return parser.finish()
 
 
+class _RichFileReferenceParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.references: list[str | None] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"img", "tg-document"}:
+            self.references.append(dict(attrs).get("src"))
+
+
+def _has_rich_media_reference(text: str, format: MessageFormat) -> bool:
+    if format == "html":
+        parser = _RichFileReferenceParser()
+        parser.feed(text)
+        return bool(parser.references)
+    source = re.sub(r"```[\s\S]*?```|`[^`]*`", "", text)
+    return bool(re.search(r"!\[[^\]]*\]\(\s*<?[^\s)>]+", source))
+
+
+def _reject_rich_media(
+    text: str, format: MessageFormat, files: Sequence[Any] | None = None
+) -> None:
+    if files or _has_rich_media_reference(text, format):
+        raise ValueError(_RICH_MEDIA_UNSUPPORTED)
+
+
 class RichBlocks:
-    """Accumulate format-neutral message blocks and account policy.
+    """Accumulate format-neutral blocks for native layer-230 RichMessages."""
 
-    Existing ``RichBlocks()`` call sites remain valid.  New callers may set all
-    four policy axes on the builder and override any of them in
-    :func:`send_rich`, :func:`edit_rich`, or :func:`rich_message`.
-    """
+    __slots__ = ("_blocks", "format", "native")
 
-    __slots__ = ("_blocks", "engine", "format", "is_premium", "is_bot")
-
-    def __init__(
-        self,
-        *,
-        engine: Engine = "auto",
-        format: MessageFormat = "html",
-        is_premium: bool | None = None,
-        is_bot: bool | None = None,
-    ) -> None:
-        self.engine = _validate_engine(engine)
+    def __init__(self, *, format: MessageFormat = "html", native: bool = False) -> None:
         self.format = _validate_format(format)
-        self.is_premium = _optional_bool("is_premium", is_premium)
-        self.is_bot = _optional_bool("is_bot", is_bot)
+        self.native = bool(native)
         self._blocks: list[dict] = []
 
     def __len__(self) -> int:
@@ -324,16 +374,65 @@ class RichBlocks:
         )
         return self
 
-    def paragraph(self, text: str) -> RichBlocks:
-        self._blocks.append({"type": "paragraph", "text": str(text)})
+    def paragraph(
+        self, text: str, *, italic: bool = False, bold: bool = False
+    ) -> RichBlocks:
+        block = {"type": "paragraph", "text": str(text)}
+        if italic:
+            block["italic"] = True
+        if bold:
+            block["bold"] = True
+        self._blocks.append(block)
         return self
 
-    def list(self, items: Sequence[Any], ordered: bool = False) -> RichBlocks:
+    def divider(self) -> RichBlocks:
+        self._blocks.append({"type": "divider"})
+        return self
+
+    def anchor(self, name: str) -> RichBlocks:
+        if not self.native:
+            raise ValueError("anchor blocks require RichBlocks(native=True)")
+        self._blocks.append({"type": "anchor", "name": str(name)})
+        return self
+
+    def footer(self, text: str) -> RichBlocks:
+        self._blocks.append({"type": "footer", "text": str(text)})
+        return self
+
+    def subtitle(self, text: str) -> RichBlocks:
+        self._blocks.append({"type": "subtitle", "text": str(text)})
+        return self
+
+    def list(
+        self,
+        items: Sequence[Any],
+        ordered: bool = False,
+        *,
+        checkbox: bool = False,
+        checked: Sequence[bool | None] | None = None,
+    ) -> RichBlocks:
+        """Append list items, optionally with native checkbox states."""
+        items = list(items)
+        if (checkbox or checked is not None) and not self.native:
+            raise ValueError("checkbox lists require RichBlocks(native=True)")
+        checked_values = None if checked is None else list(checked)
+        if checked_values is not None and len(checked_values) != len(items):
+            raise ValueError("checked must provide one value per list item")
+        if checked_values is not None and any(
+            value is not None and not isinstance(value, bool)
+            for value in checked_values
+        ):
+            raise TypeError("checked list values must be bool or None")
         self._blocks.append(
             {
                 "type": "list",
-                "items": [str(item) for item in items],
+                "items": [
+                    item if isinstance(item, RichBlocks) else str(item)
+                    for item in items
+                ],
                 "ordered": bool(ordered),
+                "checkbox": bool(checkbox or checked_values is not None),
+                "checked": checked_values,
             }
         )
         return self
@@ -341,6 +440,59 @@ class RichBlocks:
     def code(self, text: str, lang: str = "") -> RichBlocks:
         self._blocks.append(
             {"type": "code", "text": str(text), "lang": str(lang or "")}
+        )
+        return self
+
+    def math(
+        self,
+        source: str,
+        *,
+        display: bool = True,
+        before: str = "",
+        after: str = "",
+    ) -> RichBlocks:
+        if not self.native:
+            raise ValueError("math blocks require RichBlocks(native=True)")
+        if display and (before or after):
+            raise ValueError("display math cannot have inline surrounding text")
+        self._blocks.append(
+            {
+                "type": "math",
+                "source": str(source),
+                "display": bool(display),
+                "before": str(before),
+                "after": str(after),
+            }
+        )
+        return self
+
+    def quote(
+        self, text: str, citation: str = "", *, collapsed: bool | None = None
+    ) -> RichBlocks:
+        block = {"type": "quote", "text": str(text), "citation": str(citation)}
+        if collapsed is not None:
+            block["collapsed"] = bool(collapsed)
+        self._blocks.append(block)
+        return self
+
+    def pullquote(self, text: str, citation: str = "") -> RichBlocks:
+        self._blocks.append(
+            {"type": "pullquote", "text": str(text), "citation": str(citation)}
+        )
+        return self
+
+    def quote_blocks(
+        self, body: str | RichBlocks, citation: str = ""
+    ) -> RichBlocks:
+        children = (
+            body.to_list()
+            if isinstance(body, RichBlocks)
+            else [{"type": "paragraph", "text": str(body)}]
+        )
+        if any(child.get("type") == "media" for child in children):
+            raise ValueError("quote blocks cannot contain media blocks")
+        self._blocks.append(
+            {"type": "quote_blocks", "blocks": children, "citation": str(citation)}
         )
         return self
 
@@ -352,7 +504,17 @@ class RichBlocks:
         is_striped: bool = False,
         is_compact: bool = False,
         caption: str | None = None,
+        alignments: Sequence[str] | None = None,
     ) -> RichBlocks:
+        normalized_alignments = None
+        if alignments is not None:
+            normalized_alignments = [str(value).lower() for value in alignments]
+            if any(value not in {"left", "center", "right"} for value in normalized_alignments):
+                raise ValueError("table alignments must be left, center, or right")
+            if len(normalized_alignments) > MAX_RICH_TABLE_COLUMNS:
+                raise ValueError(
+                    f"RichMessage tables cannot exceed {MAX_RICH_TABLE_COLUMNS} columns"
+                )
         self._blocks.append(
             {
                 "type": "table",
@@ -363,14 +525,24 @@ class RichBlocks:
                 "is_striped": bool(is_striped),
                 "is_compact": bool(is_compact),
                 "caption": None if caption is None else str(caption),
+                "alignments": normalized_alignments,
             }
         )
         return self
 
-    def expandable(self, title: str, body: str) -> RichBlocks:
-        self._blocks.append(
-            {"type": "expandable", "title": str(title), "body": str(body)}
-        )
+    def expandable(
+        self, title: str, body: str | RichBlocks, *, open: bool = False
+    ) -> RichBlocks:
+        block = {"type": "expandable", "title": str(title)}
+        if open:
+            block["open"] = True
+        if isinstance(body, RichBlocks):
+            if any(child.get("type") == "media" for child in body):
+                raise ValueError("expandable details cannot contain media blocks")
+            block["blocks"] = body.to_list()
+        else:
+            block["body"] = str(body)
+        self._blocks.append(block)
         return self
 
     def media(
@@ -395,30 +567,17 @@ class RichBlocks:
     def build(
         self,
         *,
-        engine: Engine | None = None,
         format: MessageFormat | None = None,
-        is_premium: bool | None = None,
-        is_bot: bool | None = None,
         rtl: bool = False,
         noautolink: bool | None = None,
     ) -> Any:
-        """Build a :class:`LegacyMessage` or native input rich message."""
+        """Build the native layer-230 input RichMessage."""
         return rich_message(
             self,
-            engine=engine,
             format=format,
-            is_premium=is_premium,
-            is_bot=is_bot,
             rtl=rtl,
             noautolink=noautolink,
         )
-
-
-def _validate_engine(value: str) -> Engine:
-    value = str(value).lower()
-    if value not in {"auto", "legacy", "rich"}:
-        raise ValueError("engine must be 'auto', 'legacy', or 'rich'")
-    return value  # type: ignore[return-value]
 
 
 def _validate_format(value: str) -> MessageFormat:
@@ -472,52 +631,6 @@ def normalize_blocks(blocks: Any) -> list[dict]:
     return out
 
 
-def _optional_bool(name: str, value: bool | None) -> bool | None:
-    if value is not None and not isinstance(value, bool):
-        raise TypeError(f"{name} must be bool or None")
-    return value
-
-
-def _normalize_blocks(blocks: Any) -> list[dict]:
-    if isinstance(blocks, RichBlocks):
-        return blocks.to_list()
-    if isinstance(blocks, RichMarkup):
-        return [{"type": "paragraph", "text": blocks.text}]
-    if isinstance(blocks, str):
-        return [{"type": "paragraph", "text": blocks}]
-    return [dict(block) for block in (blocks or [])]
-
-
-def _policy(
-    blocks: Any,
-    engine: Engine | None,
-    format: MessageFormat | None,
-    is_premium: bool | None,
-    is_bot: bool | None,
-) -> tuple[Engine, MessageFormat, bool | None, bool | None]:
-    if isinstance(blocks, RichMarkup):
-        if format is not None and _validate_format(format) != blocks.format:
-            raise ValueError("format must match the RichMarkup format")
-        format = blocks.format if format is None else format
-    elif isinstance(blocks, RichBlocks):
-        engine = blocks.engine if engine is None else engine
-        format = blocks.format if format is None else format
-        is_premium = blocks.is_premium if is_premium is None else is_premium
-        is_bot = blocks.is_bot if is_bot is None else is_bot
-    engine = _validate_engine(engine or "auto")
-    format = _validate_format(format or "html")
-    is_premium = _optional_bool("is_premium", is_premium)
-    is_bot = _optional_bool("is_bot", is_bot)
-    if engine == "auto":
-        engine = "rich" if is_bot is True or is_premium is True else "legacy"
-    return engine, format, is_premium, is_bot
-
-
-def has_native_rich_messages() -> bool:
-    """Compatibility helper; Layer 228 always provides native rich messages."""
-    return True
-
-
 def table_to_text(rows: Sequence[Sequence[Any]], caption: str | None = None) -> str:
     """Render *rows* (first row = header) as a plain monospace text grid.
 
@@ -554,89 +667,12 @@ def _table_to_text(block: dict) -> str:
     return table_to_text(block.get("rows") or [], caption=block.get("caption"))
 
 
-class _TableRowsParser(HTMLParser):
-    """Extract cell text from one sanitized rich-HTML table."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.rows: list[list[str]] = []
-        self.row: list[str] | None = None
-        self.cell: list[str] | None = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() == "tr":
-            self.row = []
-        elif tag.lower() in {"td", "th"}:
-            self.cell = []
-        elif tag.lower() == "br" and self.cell is not None:
-            self.cell.append(" ")
-
-    def handle_endtag(self, tag: str) -> None:
-        tag = tag.lower()
-        if tag in {"td", "th"} and self.cell is not None:
-            if self.row is not None:
-                self.row.append(" ".join("".join(self.cell).split()))
-            self.cell = None
-        elif tag == "tr" and self.row is not None:
-            if self.row:
-                self.rows.append(self.row)
-            self.row = None
-
-    def handle_data(self, data: str) -> None:
-        if self.cell is not None:
-            self.cell.append(data)
-
-
-_RICH_TABLE_RE = re.compile(r"<table\b[^>]*>.*?</table\s*>", re.IGNORECASE | re.DOTALL)
-_MD_TABLE_SEPARATOR_RE = re.compile(
-    r"^\s*\|?\s*:?-{1,}:?\s*(?:\|\s*:?-{1,}:?\s*)+\|?\s*$"
-)
-
-
-def _rich_html_fallback(text: str) -> str:
-    """Sanitize HTML and replace unsupported native tables with text grids."""
-    safe = sanitize_rich_html(text)
-
-    def replace_table(match: re.Match[str]) -> str:
-        parser = _TableRowsParser()
-        parser.feed(match.group(0))
-        parser.close()
-        grid = table_to_text(parser.rows)
-        return f"<pre><code>{_html.escape(grid)}</code></pre>" if grid else ""
-
-    return _RICH_TABLE_RE.sub(replace_table, safe)
-
-
-def _split_markdown_row(line: str) -> list[str]:
-    line = line.strip().strip("|")
-    return [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", line)]
-
-
-def _markdown_table_fallback(markdown: str) -> str:
-    """Fence GitHub-style Markdown tables for an aligned legacy rendering."""
-    lines = markdown.splitlines()
-    out: list[str] = []
-    index = 0
-    while index < len(lines):
-        if (
-            index + 1 < len(lines)
-            and "|" in lines[index]
-            and _MD_TABLE_SEPARATOR_RE.match(lines[index + 1])
-        ):
-            rows = [_split_markdown_row(lines[index])]
-            index += 2  # skip the header and Markdown separator
-            while index < len(lines) and "|" in lines[index]:
-                rows.append(_split_markdown_row(lines[index]))
-                index += 1
-            grid = table_to_text(rows)
-            out.extend(["```", grid, "```"] if grid else [])
-            continue
-        out.append(lines[index])
-        index += 1
-    return "\n".join(out)
-
-
 def _render_table_html(block: dict) -> str:
+    alignments = block.get("alignments") or []
+    if any(value in {"center", "right"} for value in alignments):
+        raise ValueError(
+            "center/right table alignment requires native PageBlock or Markdown output"
+        )
     classes = [
         name
         for flag, name in (
@@ -686,7 +722,11 @@ def _code_html(text: str, lang: str = "") -> str:
 
 def _render_expandable_html(block: dict) -> str:
     title = _html.escape(block.get("title", ""))
-    body = _html.escape(block.get("body", ""))
+    children = block.get("blocks")
+    if isinstance(children, list):
+        body, _ = render_blocks_native_html(children, format="html")
+    else:
+        body = _html.escape(block.get("body", ""))
     heading = f"<b>{title}</b>\n" if title else ""
     return f"<blockquote expandable>{heading}{body}</blockquote>"
 
@@ -702,33 +742,76 @@ def render_blocks_native_html(
     :class:`RichBlocks`, or a looser shape (bare strings, dicts missing
     optional keys).
 
-    Returns ``(html, file_specs)`` where ``file_specs`` is
-    ``[(kind, file_id, input_photo_or_document), ...]`` for every
-    ``media`` block that carried an attachable object  -  the caller turns
-    those into ``InputRichFilePhoto``/``InputRichFileDocument`` entries.
+    Returns ``(html, file_specs)`` where ``file_specs`` describes media blocks.
+    RichMessage payload construction rejects these unverified references.
 
-    Supports every block type :class:`RichBlocks` knows about (header,
-    paragraph, list, code, table, expandable, media); unknown block
-    types are skipped rather than raised on, so a forward-compatible
-    caller adding a new block kind never breaks a send that also
-    contains known blocks.
+    Supports markup-compatible :class:`RichBlocks` (header, paragraph, list,
+    code, table, expandable, media). Unknown block types are skipped, preserving
+    the renderer's existing forward-compatible contract.
     """
     _validate_format(format)
     parts: list[str] = []
     file_specs: list[tuple[str, str, Any]] = []
     for block in blocks:
         kind = block.get("type")
-        if kind == "header":
-            level = max(1, min(6, int(block.get("level", 1))))
-            parts.append(f"<h{level}>{_html.escape(block.get('text', ''))}</h{level}>")
+        if kind in {"header", "subtitle"}:
+            parts.append(f"<p><b>{_html.escape(block.get('text', ''))}</b></p>")
         elif kind == "paragraph":
-            parts.append(f"<p>{_html.escape(block.get('text', ''))}</p>")
+            text = _html.escape(block.get("text", ""))
+            if block.get("bold"):
+                text = f"<b>{text}</b>"
+            if block.get("italic"):
+                text = f"<i>{text}</i>"
+            parts.append(f"<p>{text}</p>")
+        elif kind == "divider":
+            parts.append("<hr>")
+        elif kind == "anchor":
+            raise ValueError("anchor blocks require native PageBlockAnchor output")
+        elif kind == "footer":
+            parts.append(f"<p><i>{_html.escape(block.get('text', ''))}</i></p>")
+        elif kind == "quote":
+            citation = block.get("citation", "")
+            body = _html.escape(block.get("text", ""))
+            if citation:
+                body += f"<br><i>{_html.escape(citation)}</i>"
+            parts.append(f"<blockquote>{body}</blockquote>")
+        elif kind == "pullquote":
+            citation = block.get("citation", "")
+            body = f"<b>{_html.escape(block.get('text', ''))}</b>"
+            if citation:
+                body += f"<br><i>{_html.escape(citation)}</i>"
+            parts.append(f"<blockquote>{body}</blockquote>")
+        elif kind == "quote_blocks":
+            body, nested_files = render_blocks_native_html(
+                block.get("blocks", []), format=format
+            )
+            if nested_files:
+                raise ValueError("quote blocks cannot contain media")
+            citation = block.get("citation", "")
+            if citation:
+                body += f"<br><i>{_html.escape(citation)}</i>"
+            parts.append(f"<blockquote>{body}</blockquote>")
+        elif kind == "math":
+            raise ValueError("math blocks require native PageBlockMath/TextMath output")
         elif kind == "list":
             tag = "ol" if block.get("ordered") else "ul"
-            items = "".join(
-                f"<li>{_html.escape(item)}</li>" for item in block.get("items", [])
-            )
-            parts.append(f"<{tag}>{items}</{tag}>")
+            items = []
+            checked = block.get("checked") or []
+            for index, item in enumerate(block.get("items", [])):
+                marker = ""
+                if block.get("checkbox"):
+                    value = checked[index] if index < len(checked) else None
+                    marker = "☑ " if value is True else "☐ "
+                if isinstance(item, RichBlocks):
+                    nested, nested_files = render_blocks_native_html(
+                        item.to_list(), format=format
+                    )
+                    if nested_files:
+                        raise ValueError("media blocks are not supported inside list items")
+                    items.append(f"<li>{marker}{nested}</li>")
+                else:
+                    items.append(f"<li>{marker}{_html.escape(str(item))}</li>")
+            parts.append(f"<{tag}>{''.join(items)}</{tag}>")
         elif kind == "code":
             parts.append(_code_html(block.get("text", ""), block.get("lang", "")))
         elif kind == "table":
@@ -739,8 +822,13 @@ def render_blocks_native_html(
             obj = block.get("photo") or block.get("doc")
             if obj is not None:
                 file_id = f"m{len(file_specs)}"
-                file_specs.append(("photo" if block.get("photo") else "doc", file_id, obj))
-                parts.append(f'<figure><img data-rich-file="{file_id}"/>')
+                photo = block.get("photo") is not None
+                file_specs.append(("photo" if photo else "document", file_id, obj))
+                if photo:
+                    alt = _html.escape(block.get("caption") or "", quote=True)
+                    parts.append(f'<figure><img src="{file_id}" alt="{alt}"/>')
+                else:
+                    parts.append(f'<figure><tg-document src="{file_id}"></tg-document>')
                 if block.get("caption"):
                     parts.append(
                         f"<figcaption>{_html.escape(block['caption'])}</figcaption>"
@@ -751,74 +839,83 @@ def render_blocks_native_html(
     return "".join(parts), file_specs
 
 
-def render_blocks_fallback_html(blocks: list[dict]) -> str:
-    """Render *blocks* to the small, guaranteed-understood HTML dialect
-    ``telethon.extensions.html`` (and therefore ``custom.rich.parse_rich``)
-    actually turns into message entities: ``<b>``, ``<pre><code>``,
-    ``<blockquote expandable>``. Tables/headings have no message-entity
-    form, so headers become bold lines and tables become a monospace text
-    grid inside a ``<pre>`` block.
-
-    ``blocks`` must already be a plain list of block dicts  -  run
-    :func:`normalize_blocks` first for a :class:`RichBlocks` or looser
-    input.
-    """
-    chunks: list[str] = []
-    for block in blocks:
-        kind = block.get("type")
-        if kind == "header":
-            chunks.append(f"<b>{_html.escape(block.get('text', ''))}</b>")
-        elif kind == "paragraph":
-            chunks.append(_html.escape(block.get("text", "")))
-        elif kind == "list":
-            tag = "ol" if block.get("ordered") else "ul"
-            items = "".join(
-                f"<li>{_html.escape(item)}</li>" for item in block.get("items", [])
-            )
-            chunks.append(f"<{tag}>{items}</{tag}>")
-        elif kind == "code":
-            chunks.append(
-                f"<pre><code>{_html.escape(block.get('text', ''))}</code></pre>"
-            )
-        elif kind == "table":
-            grid = _table_to_text(block)
-            if grid:
-                chunks.append(f"<pre><code>{_html.escape(grid)}</code></pre>")
-        elif kind == "expandable":
-            chunks.append(_render_expandable_html(block))
-        elif kind == "media":
-            if block.get("caption"):
-                chunks.append(_html.escape(block["caption"]))
-    return "\n\n".join(chunk for chunk in chunks if chunk)
-
-
-def _native_markdown(blocks: list[dict]) -> tuple[str, list]:
+def _native_markdown(blocks: list[dict]) -> tuple[str, list[RichFile]]:
     """Render *blocks* in the native Rich Message markdown dialect.
 
-    Returns ``(markdown, files)`` where ``files`` are built
-    ``InputRichFilePhoto``/``InputRichFileDocument`` objects referenced from
-    the markup through ``attachment:<file_id>`` links.
+    Returns ``(markdown, files)`` where Markdown image links use stable local
+    IDs. The payload builder rejects this media path until Telegram accepts a
+    native MTProto reference format.
     """
     parts: list[str] = []
     files: list = []
     for block in blocks:
         kind = block.get("type")
-        if kind == "header":
-            level = max(1, min(6, int(block.get("level", 1))))
-            parts.append(f"{'#' * level} {_escape_markdown(block.get('text', ''))}")
+        if kind in {"header", "subtitle"}:
+            parts.append(f"**{_escape_markdown(block.get('text', ''))}**")
         elif kind == "paragraph":
-            parts.append(_escape_markdown(block.get("text", "")))
-        elif kind == "list":
-            parts.append(
-                "\n".join(
-                    (
-                        f"{index}. {_escape_markdown(item)}"
-                        if block.get("ordered")
-                        else f"- {_escape_markdown(item)}"
-                    )
-                    for index, item in enumerate(block.get("items", []), 1)
+            text = _escape_markdown(block.get("text", ""))
+            if block.get("bold"):
+                text = f"**{text}**"
+            if block.get("italic"):
+                text = f"*{text}*"
+            parts.append(text)
+        elif kind == "divider":
+            parts.append("---")
+        elif kind == "anchor":
+            raise ValueError("anchor blocks require native PageBlockAnchor output")
+        elif kind == "footer":
+            parts.append(f"*{_escape_markdown(block.get('text', ''))}*")
+        elif kind in {"quote", "pullquote"}:
+            text = _escape_markdown(block.get("text", ""))
+            if kind == "pullquote":
+                text = f"**{text}**"
+            lines = [f"> {line}" for line in text.splitlines()]
+            citation = block.get("citation", "")
+            if citation:
+                lines.extend(
+                    f"> *{_escape_markdown(line)}*"
+                    for line in citation.splitlines()
                 )
-            )
+            parts.append("\n".join(lines))
+        elif kind == "quote_blocks":
+            body, nested_files = _native_markdown(block.get("blocks", []))
+            if nested_files:
+                raise ValueError("quote blocks cannot contain media")
+            lines = [f"> {line}" for line in body.splitlines()]
+            citation = block.get("citation", "")
+            if citation:
+                lines.extend(
+                    f"> *{_escape_markdown(line)}*"
+                    for line in citation.splitlines()
+                )
+            parts.append("\n".join(lines))
+        elif kind == "math":
+            raise ValueError("math blocks require native PageBlockMath/TextMath output")
+        elif kind == "list":
+            lines = []
+            checked = block.get("checked") or []
+            for index, item in enumerate(block.get("items", []), 1):
+                prefix = f"{index}. " if block.get("ordered") else "- "
+                checked_index = index - 1
+                if block.get("checkbox"):
+                    value = checked[checked_index] if checked_index < len(checked) else None
+                    prefix += "☑ " if value is True else "☐ "
+                if isinstance(item, RichBlocks):
+                    nested, nested_files = _native_markdown(item.to_list())
+                    if nested_files:
+                        raise ValueError("media blocks are not supported inside list items")
+                    nested_lines = nested.splitlines()
+                    lines.append(
+                        "\n".join(
+                            [prefix + nested_lines[0]]
+                            + [f"  {line}" for line in nested_lines[1:]]
+                        )
+                        if nested_lines
+                        else prefix.rstrip()
+                    )
+                else:
+                    lines.append(prefix + _escape_markdown(item))
+            parts.append("\n".join(lines))
         elif kind == "code":
             parts.append(f"```{block.get('lang', '')}\n{block.get('text', '')}\n```")
         elif kind == "table":
@@ -828,13 +925,26 @@ def _native_markdown(blocks: list[dict]) -> tuple[str, list]:
                 table.append(f"**{block['caption']}**")
             if rows:
                 table.append("| " + " | ".join(rows[0]) + " |")
-                table.append("| " + " | ".join("---" for _ in rows[0]) + " |")
+                alignments = block.get("alignments") or []
+                separators = []
+                for index in range(len(rows[0])):
+                    alignment = alignments[index] if index < len(alignments) else None
+                    separators.append(
+                        {"left": ":---", "center": ":---:", "right": "---:"}.get(
+                            alignment, "---"
+                        )
+                    )
+                table.append("| " + " | ".join(separators) + " |")
                 table.extend("| " + " | ".join(row) + " |" for row in rows[1:])
             parts.append("\n".join(table))
         elif kind == "expandable":
-            content = "\n".join(
-                filter(None, (block.get("title", ""), block.get("body", "")))
-            )
+            children = block.get("blocks")
+            if isinstance(children, list):
+                body, nested_files = _native_markdown(children)
+                files.extend(nested_files)
+            else:
+                body = block.get("body", "")
+            content = "\n".join(filter(None, (block.get("title", ""), body)))
             parts.append(
                 "\n".join(
                     f"> {_escape_markdown(line)}" for line in content.splitlines()
@@ -844,131 +954,473 @@ def _native_markdown(blocks: list[dict]) -> tuple[str, list]:
             obj = block.get("photo") or block.get("doc")
             if obj is not None:
                 file_id = f"m{len(files)}"
-                if block.get("photo") is not None:
-                    files.append(_types.InputRichFilePhoto(id=file_id, photo=obj))
-                else:
-                    files.append(_types.InputRichFileDocument(id=file_id, document=obj))
-                parts.append(f"![{block.get('caption') or ''}](attachment:{file_id})")
+                kind = "photo" if block.get("photo") is not None else "document"
+                files.append(RichFile(id=file_id, media=obj, kind=kind))
+                parts.append(f"![{block.get('caption') or ''}]({file_id})")
             elif block.get("caption"):
                 parts.append(_escape_markdown(block["caption"]))
     return "\n\n".join(filter(None, parts)), files
 
 
-def _fallback_markdown(blocks: list[dict]) -> str:
-    """Render *blocks* in the small, entity-safe markdown dialect mdv3
-    understands: bold headers, fenced code, quoted expandables. Tables have
-    no entity form, so they become a monospace grid inside a fence.
-    """
-    parts: list[str] = []
-    for block in blocks:
-        kind = block.get("type")
-        if kind == "header":
-            parts.append(f"**{_escape_markdown(block.get('text', ''))}**")
-        elif kind == "paragraph":
-            parts.append(_escape_markdown(block.get("text", "")))
-        elif kind == "list":
-            parts.append(
-                "\n".join(
-                    (
-                        f"{index}. {_escape_markdown(item)}"
-                        if block.get("ordered")
-                        else f"- {_escape_markdown(item)}"
-                    )
-                    for index, item in enumerate(block.get("items", []), 1)
-                )
-            )
-        elif kind == "code":
-            parts.append(f"```{block.get('lang', '')}\n{block.get('text', '')}\n```")
-        elif kind == "table":
-            grid = _table_to_text(block)
-            if grid:
-                parts.append(f"```\n{grid}\n```")
-        elif kind == "expandable":
-            content = "\n".join(
-                filter(None, (block.get("title", ""), block.get("body", "")))
-            )
-            parts.append(
-                "\n".join(
-                    f"> {_escape_markdown(line)}" for line in content.splitlines()
-                )
-            )
-        elif kind == "media":
-            if block.get("caption"):
-                parts.append(_escape_markdown(block["caption"]))
-    return "\n\n".join(filter(None, parts))
-
-
-def legacy_message(
-    blocks: Any, format: MessageFormat | None = None
-) -> LegacyMessage:
-    """Render *blocks* with the always-safe legacy engine.
-
-    ``format`` picks the fallback dialect the markup is rendered in
-    (``html``: the small entity-tag dialect; ``markdown``: the bold/fence
-    dialect), then :mod:`telethon.extensions.markdownv3` parses that markup
-    into real message entities. Never touches the rich TL schema, so it
-    works on every build and every account.
-    """
+def rich_markup_from_blocks(
+    blocks: Any, *, format: MessageFormat | None = None
+) -> RichMarkup:
+    """Render the structured block model into native HTML or Markdown."""
     if isinstance(blocks, RichMarkup):
-        format = blocks.format if format is None else _validate_format(format)
-        if format != blocks.format:
+        chosen = blocks.format if format is None else _validate_format(format)
+        if chosen != blocks.format:
             raise ValueError("format must match the RichMarkup format")
-        markup = (
-            _rich_html_fallback(blocks.text)
-            if format == "html"
-            else _markdown_table_fallback(blocks.text)
+        return blocks
+    chosen = _validate_format(format or getattr(blocks, "format", "html"))
+    if isinstance(blocks, str):
+        return RichMarkup(blocks, chosen)
+    normalized = normalize_blocks(blocks)
+    if chosen == "html":
+        markup, specs = render_blocks_native_html(normalized)
+        files = tuple(
+            RichFile(id=file_id, media=media, kind="photo" if kind == "photo" else "document")
+            for kind, file_id, media in specs
         )
     else:
-        format = _validate_format(format or "html")
-        markup = (
-            render_blocks_fallback_html(_normalize_blocks(blocks))
-            if format == "html"
-            else _fallback_markdown(_normalize_blocks(blocks))
+        markup, files = _native_markdown(normalized)
+        files = tuple(files)
+    return RichMarkup(markup, chosen, files)
+
+
+def rich_message_html(
+    blocks: Any,
+    *,
+    files: Sequence[Any] | None = None,
+    rtl: bool = False,
+    noautolink: bool | None = None,
+):
+    """Build a text-only native HTML RichMessage; media references are rejected."""
+    markup = rich_markup_from_blocks(blocks, format="html")
+    all_files = tuple(markup.files) + tuple(files or ())
+    _reject_rich_media(markup.text, "html", all_files)
+    if len(markup.text) > MAX_RICH_MESSAGE_CHARS:
+        raise ValueError(
+            f"RichMessages cannot exceed {MAX_RICH_MESSAGE_CHARS} characters"
         )
-    if not markup:
-        return LegacyMessage("", [], "", format)
-    text, entities = normalize_parsed(_mdv3.parse(markup, mode=format), fallback=markup)
-    return LegacyMessage(text, entities, markup, format)
+    html_text = sanitize_rich_html(markup.text)
+    return _types.InputRichMessageHTML(
+        html=html_text,
+        rtl=bool(rtl) or None,
+        noautolink=noautolink,
+        files=None,
+    )
 
 
 def rich_message_markdown(
-    blocks: Any, *, rtl: bool = False, noautolink: bool | None = None
+    blocks: Any,
+    *,
+    files: Sequence[Any] | None = None,
+    rtl: bool = False,
+    noautolink: bool | None = None,
 ):
-    """Build a native ``InputRichMessageMarkdown``."""
-    if isinstance(blocks, RichMarkup):
-        if blocks.format != "markdown":
-            raise ValueError("RichMarkup must use Markdown for a Markdown payload")
-        markup, files = blocks.text, []
-    else:
-        markup, files = _native_markdown(_normalize_blocks(blocks))
+    """Build a text-only native Markdown RichMessage; media references are rejected."""
+    markup = rich_markup_from_blocks(blocks, format="markdown")
+    all_files = tuple(markup.files) + tuple(files or ())
+    _reject_rich_media(markup.text, "markdown", all_files)
+    if len(markup.text) > MAX_RICH_MESSAGE_CHARS:
+        raise ValueError(
+            f"RichMessages cannot exceed {MAX_RICH_MESSAGE_CHARS} characters"
+        )
     return _types.InputRichMessageMarkdown(
-        markdown=markup,
+        markdown=markup.text,
         rtl=bool(rtl) or None,
         noautolink=noautolink,
-        files=files or None,
+        files=None,
     )
+
+
+def _validate_native_page_blocks(blocks: Sequence[Any]) -> None:
+    """Apply RichMessage guide limits to typed Layer-230 PageBlock trees."""
+    count = 0
+
+    def add_blocks(amount: int = 1) -> None:
+        nonlocal count
+        count += amount
+        if count > MAX_RICH_MESSAGE_BLOCKS:
+            raise ValueError(
+                f"RichMessages cannot exceed {MAX_RICH_MESSAGE_BLOCKS} blocks"
+            )
+
+    def visit(nodes: Sequence[Any], depth: int = 0) -> None:
+        if depth > MAX_RICH_NESTING_DEPTH:
+            raise ValueError(
+                f"RichMessages cannot exceed {MAX_RICH_NESTING_DEPTH} nested levels"
+            )
+        for node in nodes:
+            name = type(node).__name__
+            if name.startswith("PageBlock"):
+                add_blocks()
+            if name == "PageBlockTable":
+                for row in getattr(node, "rows", ()) or ():
+                    cells = getattr(row, "cells", ()) or ()
+                    if len(cells) > MAX_RICH_TABLE_COLUMNS:
+                        raise ValueError(
+                            f"RichMessage tables cannot exceed {MAX_RICH_TABLE_COLUMNS} columns"
+                        )
+                    add_blocks()
+            elif name in {"PageBlockList", "PageBlockOrderedList"}:
+                for item in getattr(node, "items", ()) or ():
+                    add_blocks()
+                    child_blocks = getattr(item, "blocks", None)
+                    if child_blocks:
+                        visit(child_blocks, depth + 1)
+            else:
+                child_blocks = getattr(node, "blocks", None)
+                if child_blocks:
+                    visit(child_blocks, depth + 1)
+
+    visit(blocks)
+
+    characters = 0
+    stack = list(blocks)
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, _types.TLObject):
+            continue
+        name = type(node).__name__
+        if name == "TextPlain":
+            characters += len(str(getattr(node, "text", "")))
+        elif name in {"TextMath", "PageBlockMath"}:
+            characters += len(str(getattr(node, "source", "")))
+        if characters > MAX_RICH_MESSAGE_CHARS:
+            raise ValueError(
+                f"RichMessages cannot exceed {MAX_RICH_MESSAGE_CHARS} characters"
+            )
+        for value in vars(node).values():
+            if isinstance(value, _types.TLObject):
+                stack.append(value)
+            elif isinstance(value, (list, tuple)):
+                stack.extend(value)
+
+
+_UNSUPPORTED_SEMANTIC_PAGE_BLOCKS = frozenset(
+    {"PageBlockTitle", "PageBlockHeader", "PageBlockSubtitle"}
+)
+_UNVERIFIED_MEDIA_PAGE_BLOCKS = frozenset(
+    {
+        "PageBlockPhoto",
+        "PageBlockDocument",
+        "PageBlockCover",
+        "PageBlockCollage",
+        "PageBlockSlideshow",
+    }
+)
+
+
+def _normalize_tl_page_block(node: Any) -> Any:
+    name = type(node).__name__
+    if name in _UNSUPPORTED_SEMANTIC_PAGE_BLOCKS:
+        text = getattr(node, "text", _types.TextEmpty())
+        if not isinstance(text, _types.TextBold):
+            text = _types.TextBold(text=text)
+        return _types.PageBlockParagraph(text=text)
+    if not isinstance(node, _types.TLObject):
+        return node
+
+    clone = None
+    for field in ("blocks", "items"):
+        value = getattr(node, field, None)
+        if isinstance(value, (list, tuple)):
+            normalized = [_normalize_tl_page_block(item) for item in value]
+            if clone is None:
+                clone = copy.copy(node)
+            setattr(
+                clone,
+                field,
+                tuple(normalized) if isinstance(value, tuple) else normalized,
+            )
+    return clone if clone is not None else node
+
+
+def _normalize_tl_page_blocks(blocks: Sequence[Any]) -> list[Any]:
+    return [_normalize_tl_page_block(block) for block in blocks]
+
+
+def _contains_unverified_page_media(value: Any) -> bool:
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if type(node).__name__ in _UNVERIFIED_MEDIA_PAGE_BLOCKS:
+            return True
+        if isinstance(node, _types.TLObject):
+            for child in vars(node).values():
+                if isinstance(child, _types.TLObject):
+                    stack.append(child)
+                elif isinstance(child, (list, tuple)):
+                    stack.extend(child)
+    return False
+
+
+def _reject_unverified_native_media(message: Any) -> None:
+    if isinstance(message, (_types.InputRichMessageHTML, _types.InputRichMessageMarkdown)):
+        format = "html" if isinstance(message, _types.InputRichMessageHTML) else "markdown"
+        text = message.html if format == "html" else message.markdown
+        _reject_rich_media(text, format, message.files)
+    elif isinstance(message, _types.InputRichMessage):
+        if message.photos or message.documents or _contains_unverified_page_media(message.blocks):
+            raise ValueError(_RICH_MEDIA_UNSUPPORTED)
+
+
+def rich_message_blocks(
+    blocks: Sequence[Any],
+    *,
+    photos: Sequence[Any] | None = None,
+    documents: Sequence[Any] | None = None,
+    users: Sequence[Any] | None = None,
+    rtl: bool = False,
+    noautolink: bool | None = None,
+):
+    """Construct layer-230 ``InputRichMessage`` from native ``PageBlock``s."""
+    photos = list(photos) if photos is not None else None
+    documents = list(documents) if documents is not None else None
+    if photos or documents or _contains_unverified_page_media(blocks):
+        raise ValueError(_RICH_MEDIA_UNSUPPORTED)
+    blocks = _normalize_tl_page_blocks(list(blocks))
+    _validate_native_page_blocks(blocks)
+    return _types.InputRichMessage(
+        blocks=blocks,
+        rtl=bool(rtl) or None,
+        noautolink=noautolink,
+        photos=photos,
+        documents=documents,
+        users=list(users) if users is not None else None,
+    )
+
+
+def _is_native_rich_message(value: Any) -> bool:
+    return isinstance(
+        value,
+        (
+            _types.InputRichMessage,
+            _types.InputRichMessageHTML,
+            _types.InputRichMessageMarkdown,
+        ),
+    )
+
+
+def _native_page_blocks(blocks: Any) -> list[Any]:
+    """Convert supported RichBlocks to typed layer-230 Telethon PageBlocks."""
+    result = []
+    for block in normalize_blocks(blocks):
+        kind = block.get("type")
+        text = _types.TextPlain(text=str(block.get("text", "")))
+        if kind in {"header", "subtitle"}:
+            # Instant View title/header blocks trigger RICH_MESSAGE_BLOCK_UNSUPPORTED.
+            # Preserve the title styling as a paragraph; native details/code stay intact.
+            result.append(
+                _types.PageBlockParagraph(text=_types.TextBold(text=text))
+            )
+        elif kind == "paragraph":
+            text = _types.TextPlain(text=str(block.get("text", "")))
+            if block.get("bold"):
+                text = _types.TextBold(text=text)
+            if block.get("italic"):
+                text = _types.TextItalic(text=text)
+            result.append(_types.PageBlockParagraph(text=text))
+        elif kind == "math":
+            source = str(block.get("source", ""))
+            if block.get("display", True):
+                result.append(_types.PageBlockMath(source=source))
+            else:
+                texts = []
+                if block.get("before"):
+                    texts.append(_types.TextPlain(text=str(block["before"])))
+                texts.append(_types.TextMath(source=source))
+                if block.get("after"):
+                    texts.append(_types.TextPlain(text=str(block["after"])))
+                rich_text = texts[0] if len(texts) == 1 else _types.TextConcat(texts=texts)
+                result.append(_types.PageBlockParagraph(text=rich_text))
+        elif kind == "quote":
+            result.append(
+                _types.PageBlockBlockquote(
+                    text=_types.TextPlain(text=str(block.get("text", ""))),
+                    caption=_types.TextPlain(text=str(block.get("citation", ""))),
+                    collapsed=block.get("collapsed"),
+                )
+            )
+        elif kind == "pullquote":
+            result.append(
+                _types.PageBlockPullquote(
+                    text=_types.TextPlain(text=str(block.get("text", ""))),
+                    caption=_types.TextPlain(text=str(block.get("citation", ""))),
+                )
+            )
+        elif kind == "quote_blocks":
+            result.append(
+                _types.PageBlockBlockquoteBlocks(
+                    blocks=_native_page_blocks(block.get("blocks", [])),
+                    caption=_types.TextPlain(text=str(block.get("citation", ""))),
+                )
+            )
+        elif kind == "code":
+            result.append(
+                _types.PageBlockPreformatted(
+                    text=text,
+                    language=str(block.get("lang", "")),
+                )
+            )
+        elif kind == "divider":
+            result.append(_types.PageBlockDivider())
+        elif kind == "anchor":
+            result.append(_types.PageBlockAnchor(name=str(block.get("name", ""))))
+        elif kind == "footer":
+            result.append(_types.PageBlockFooter(text=text))
+        elif kind == "list":
+            items = []
+            checked_states = block.get("checked") or []
+            for index, item in enumerate(block.get("items", []), 1):
+                checked = (
+                    checked_states[index - 1]
+                    if index - 1 < len(checked_states)
+                    else None
+                )
+                checkbox = True if block.get("checkbox") or checked is not None else None
+                nested_blocks = (
+                    item.to_list() if isinstance(item, RichBlocks) else None
+                )
+                if nested_blocks is not None:
+                    nested = _native_page_blocks(nested_blocks)
+                    item_type = (
+                        _types.PageListOrderedItemBlocks
+                        if block.get("ordered")
+                        else _types.PageListItemBlocks
+                    )
+                    kwargs = {"blocks": nested, "checkbox": checkbox, "checked": checked}
+                    if block.get("ordered"):
+                        kwargs["num"] = str(index)
+                    items.append(item_type(**kwargs))
+                elif block.get("ordered"):
+                    items.append(
+                        _types.PageListOrderedItemText(
+                            num=str(index),
+                            text=_types.TextPlain(text=str(item)),
+                            checkbox=checkbox,
+                            checked=checked,
+                        )
+                    )
+                else:
+                    items.append(
+                        _types.PageListItemText(
+                            text=_types.TextPlain(text=str(item)),
+                            checkbox=checkbox,
+                            checked=checked,
+                        )
+                    )
+            page_type = (
+                _types.PageBlockOrderedList
+                if block.get("ordered")
+                else _types.PageBlockList
+            )
+            result.append(page_type(items=items))
+        elif kind == "table":
+            if block.get("is_compact"):
+                raise ValueError(
+                    "compact table styling is not part of the documented "
+                    "MTProto PageBlockTable"
+                )
+            alignments = block.get("alignments") or []
+            rows = [
+                _types.PageTableRow(
+                    cells=[
+                        _types.PageTableCell(
+                            header=row_index == 0,
+                            align_center=(
+                                True
+                                if cell_index < len(alignments)
+                                and alignments[cell_index] == "center"
+                                else None
+                            ),
+                            align_right=(
+                                True
+                                if cell_index < len(alignments)
+                                and alignments[cell_index] == "right"
+                                else None
+                            ),
+                            text=_types.TextPlain(text=str(cell)),
+                        )
+                        for cell_index, cell in enumerate(row)
+                    ]
+                )
+                for row_index, row in enumerate(block.get("rows") or [])
+            ]
+            caption = str(block.get("caption") or "")
+            result.append(
+                _types.PageBlockTable(
+                    title=(
+                        _types.TextPlain(text=caption)
+                        if caption
+                        else _types.TextEmpty()
+                    ),
+                    rows=rows,
+                    bordered=bool(block.get("is_bordered", True)),
+                    striped=bool(block.get("is_striped", False)),
+                )
+            )
+        elif kind == "expandable":
+            children = block.get("blocks")
+            if not isinstance(children, list):
+                body = str(block.get("body", ""))
+                children = [{"type": "paragraph", "text": body}] if body else []
+            result.append(
+                _types.PageBlockDetails(
+                    blocks=_native_page_blocks(children),
+                    title=_types.TextPlain(text=str(block.get("title", ""))),
+                    open=bool(block.get("open", False)),
+                )
+            )
+        elif kind == "media":
+            raise ValueError(_RICH_MEDIA_UNSUPPORTED)
+        else:
+            raise TypeError(
+                f"native page-block RichBlocks does not support {kind!r} blocks"
+            )
+    return result
 
 
 def rich_message(
     blocks: Any,
     *,
-    engine: Engine | None = None,
     format: MessageFormat | None = None,
-    is_premium: bool | None = None,
-    is_bot: bool | None = None,
     rtl: bool = False,
     noautolink: bool | None = None,
 ) -> Any:
-    """Build using the selected engine and format.
-
-    ``auto`` selects the rich engine for Premium users and all bots; ordinary
-    users select the legacy mdv3 engine.  Explicit ``rich`` is an expert
-    override and always builds the requested native payload.
-    """
-    engine, format, _, _ = _policy(blocks, engine, format, is_premium, is_bot)
-    if engine == "legacy":
-        return legacy_message(blocks, format=format)
-    if format == "html":
+    """Build or pass through a native layer-230 InputRichMessage variant."""
+    if _is_native_rich_message(blocks):
+        if format is not None:
+            raise ValueError("format cannot override an already-built InputRichMessage")
+        _reject_unverified_native_media(blocks)
+        if isinstance(blocks, _types.InputRichMessage):
+            return rich_message_blocks(
+                blocks.blocks,
+                photos=blocks.photos,
+                documents=blocks.documents,
+                users=blocks.users,
+                rtl=bool(blocks.rtl),
+                noautolink=blocks.noautolink,
+            )
+        markup_text = (
+            blocks.html
+            if isinstance(blocks, _types.InputRichMessageHTML)
+            else blocks.markdown
+        )
+        if len(markup_text) > MAX_RICH_MESSAGE_CHARS:
+            raise ValueError(
+                f"RichMessages cannot exceed {MAX_RICH_MESSAGE_CHARS} characters"
+            )
+        return blocks
+    chosen = _validate_format(format or getattr(blocks, "format", "html"))
+    if isinstance(blocks, RichBlocks) and blocks.native:
+        if chosen != blocks.format:
+            raise ValueError("format must match a native RichBlocks format")
+        return rich_message_blocks(
+            _native_page_blocks(blocks), rtl=rtl, noautolink=noautolink
+        )
+    if chosen == "html":
         return rich_message_html(blocks, rtl=rtl, noautolink=noautolink)
     return rich_message_markdown(blocks, rtl=rtl, noautolink=noautolink)
 
@@ -977,135 +1429,103 @@ def bot_inline_rich_message(
     blocks: Any,
     *,
     format: MessageFormat = "html",
-    is_premium: bool | None = None,
-    is_bot: bool | None = None,
     reply_markup: Any = None,
     rtl: bool = False,
     noautolink: bool | None = None,
 ) -> Any:
-    """Wrap a native Rich Message payload for an inline query result.
-
-    Uses the account policy exactly like :func:`rich_message` to pick the
-    html or markdown flavour, and carries the caller's ``reply_markup``
-    untouched. The pinned fork always has the rich inline schema.
-    """
-    payload = rich_message(
-        blocks,
-        format=format,
-        is_premium=is_premium,
-        is_bot=is_bot,
-        rtl=rtl,
-        noautolink=noautolink,
-    )
+    """Wrap a native rich payload; keyboard markup belongs on this wrapper."""
+    payload = rich_message(blocks, format=format, rtl=rtl, noautolink=noautolink)
     return _types.InputBotInlineMessageRichMessage(
         rich_message=payload, reply_markup=reply_markup
     )
 
 
-def _fallback_text_entities(
-    block_list: Any, format: MessageFormat = "html"
-) -> tuple[str, list]:
-    """Render *block_list* to ``(text, entities)`` the guaranteed way.
+class _PlainHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
 
-    Falls back to an untagged plain-text join (no entities) if
-    ``custom.rich`` itself failed to import  -  belt-and-suspenders so this
-    module never raises merely because of the fallback path.
-    """
-    format = _validate_format(block_list.format if isinstance(block_list, RichMarkup) else format)
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() in {"br", "hr", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "figure"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {"p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "figure", "blockquote", "pre"}:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+
+def _markup_plain_text(text: str, format: MessageFormat) -> str:
+    if format == "html":
+        parser = _PlainHTMLParser()
+        parser.feed(text)
+        parser.close()
+        return "\n".join(line.strip() for line in "".join(parser.parts).splitlines() if line.strip())
+    text = re.sub(r"```[^\n]*\n([\s\S]*?)```", r"\1", text)
+    text = re.sub(r"`([^`]+)`", r"\1", text)
+    text = re.sub(r"!?\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", text)
+    text = re.sub(r"(?m)^\s*(?:[-*+]|>\s?|\d+\.\s+)", "", text)
+    return re.sub(r"(?<!\\)[*_~]{1,3}", "", text).replace(r"\\", "\\")
+
+
+def blocks_to_plain_text(block_list: Any) -> str:
+    """Extract a readable plain string for the required request ``message`` field."""
     if isinstance(block_list, RichMarkup):
-        markup = (
-            _rich_html_fallback(block_list.text)
-            if format == "html"
-            else _markdown_table_fallback(block_list.text)
-        )
-    else:
-        normalized = normalize_blocks(block_list)
-        markup = (
-            render_blocks_fallback_html(normalized)
-            if format == "html"
-            else _fallback_markdown(normalized)
-        )
-    if not markup:
-        return "", []
-    if parse_rich is None:
-        if isinstance(block_list, RichMarkup):
-            try:
-                return normalize_parsed(_mdv3.parse(markup, mode=format), fallback=markup)
-            except Exception:  # pragma: no cover - defensive
-                return markup, []
-        return blocks_to_plain_text(normalized), []
-    try:
-        return parse_rich(markup, mode=format)
-    except Exception:  # pragma: no cover - defensive
-        if isinstance(block_list, RichMarkup):
-            try:
-                return normalize_parsed(_mdv3.parse(markup, mode=format), fallback=markup)
-            except Exception:
-                return markup, []
-        return blocks_to_plain_text(normalized), []
-
-
-def blocks_to_plain_text(block_list: list[dict]) -> str:
-    """Untagged last-resort text summary (no entities, no markup).
-
-    ``block_list`` must already be a plain list of block dicts  -  run
-    :func:`normalize_blocks` first for a :class:`RichBlocks` or looser
-    input (bare strings, dicts missing optional keys). The single
-    plain-text renderer for every block-driven fallback path in this
-    codebase, e.g. ``InlineResults.article_rich``'s degraded-``article``
-    fallback in ``pyUltroid/_core/inlineresults.py``.
-    """
+        return _markup_plain_text(block_list.text, block_list.format)
+    if isinstance(block_list, str):
+        return block_list
+    if not isinstance(block_list, list):
+        block_list = normalize_blocks(block_list)
     bits: list[str] = []
     for block in block_list:
         btype = block.get("type")
-        if btype in ("header", "paragraph"):
+        if btype in ("header", "subtitle", "paragraph", "footer"):
             bits.append(block.get("text", ""))
+        elif btype in {"quote", "pullquote"}:
+            bits.extend((block.get("text", ""), block.get("citation", "")))
+        elif btype == "quote_blocks":
+            children = block.get("blocks", [])
+            bits.append(blocks_to_plain_text(children))
+            if block.get("citation"):
+                bits.append(block["citation"])
+        elif btype == "math":
+            bits.append(
+                f"{block.get('before', '')}{block.get('source', '')}"
+                f"{block.get('after', '')}"
+            )
         elif btype == "list":
-            bits.extend(block.get("items", []))
+            for item in block.get("items", []):
+                if isinstance(item, RichBlocks):
+                    bits.append(blocks_to_plain_text(item.to_list()))
+                else:
+                    bits.append(str(item))
         elif btype == "code":
             bits.append(block.get("text", ""))
         elif btype == "expandable":
             bits.append(block.get("title", ""))
-            bits.append(block.get("body", ""))
+            children = block.get("blocks")
+            if isinstance(children, list):
+                bits.append(blocks_to_plain_text(children))
+            else:
+                bits.append(block.get("body", ""))
         elif btype == "table":
             bits.append(_table_to_text(block))
         elif btype == "media" and block.get("caption"):
             bits.append(block["caption"])
-    return "\n\n".join(b for b in bits if b)
+    return "\n\n".join(str(bit) for bit in bits if bit)
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# Native rich_message_html
-# ──────────────────────────────────────────────────────────────────────────
-
-
-def rich_message_html(
-    blocks: Any, *, rtl: bool = False, noautolink: bool | None = None
-):
-    """Render *blocks* to a native ``InputRichMessageHTML``.
-
-    ``blocks`` may be a :class:`RichBlocks` instance or a plain iterable of
-    block dicts. The pinned Telethon-v2 fork always has the rich schema
-    (layer 228), so the type is used directly - no capability guards.
-    """
+def _plain_message_text(blocks: Any, format: MessageFormat | None = None) -> str:
     if isinstance(blocks, RichMarkup):
-        if blocks.format != "html":
-            raise ValueError("RichMarkup must use HTML for an HTML payload")
-        html_str, file_specs = sanitize_rich_html(blocks.text), []
-    else:
-        html_str, file_specs = render_blocks_native_html(normalize_blocks(blocks))
-    files = None
-    if file_specs:
-        built = []
-        for kind, file_id, obj in file_specs:
-            if kind == "photo":
-                built.append(_types.InputRichFilePhoto(id=file_id, photo=obj))
-            else:
-                built.append(_types.InputRichFileDocument(id=file_id, document=obj))
-        files = built or None
-    return _types.InputRichMessageHTML(
-        html=html_str, rtl=bool(rtl) or None, noautolink=noautolink, files=files
-    )
+        return blocks_to_plain_text(blocks)
+    if isinstance(blocks, str):
+        return _markup_plain_text(blocks, _validate_format(format or "html"))
+    if _is_native_rich_message(blocks):
+        return ""
+    return blocks_to_plain_text(normalize_blocks(blocks))
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -1129,20 +1549,65 @@ def _build_reply_to(reply_to: Any):
     return _types.InputReplyToMessage(message_id) if message_id is not None else None
 
 
-def _client_me_flag(client: Any, name: str) -> bool | None:
-    value = getattr(getattr(client, "me", None), name, None)
-    return value if isinstance(value, bool) else None
+def _build_reply_markup(client: Any, buttons: Any):
+    if buttons is None:
+        return None
+    if isinstance(buttons, _types.ReplyInlineMarkup):
+        return buttons
+    return client.build_reply_markup(buttons)
 
 
-def rich_sender(client: Any) -> Any:
-    """Preserve legacy assistant-bot routing for callers without policy args."""
-    if _client_me_flag(client, "bot") is True:
-        return client
-    try:
-        from .. import asst
-    except Exception:
-        return client
-    return asst if asst is not None and asst is not client else client
+def _sent_message_reference(response: Any) -> Any:
+    """Resolve raw SendMessage updates to a Message or ID usable by Telethon."""
+    if response is None:
+        return None
+    if isinstance(response, _types.UpdateShortSentMessage):
+        return response.id
+    if isinstance(response, _types.UpdateMessageID):
+        return response.id
+    if isinstance(response, (_types.UpdateNewMessage, _types.UpdateNewChannelMessage)):
+        return response.message
+    if isinstance(response, _types.UpdateShort):
+        response = response.update
+
+    updates = getattr(response, "updates", None)
+    if updates is not None:
+        messages = []
+        message_ids = []
+        for update in updates:
+            if isinstance(update, _types.UpdateShort):
+                update = update.update
+            if isinstance(update, (_types.UpdateNewMessage, _types.UpdateNewChannelMessage)):
+                messages.append(update.message)
+            elif isinstance(update, _types.UpdateMessageID):
+                message_ids.append(update.id)
+        if messages:
+            return messages[-1]
+        if message_ids:
+            return message_ids[-1]
+    return response
+
+
+async def _prepare_rich_message(
+    client: Any,
+    peer: Any,
+    blocks: Any,
+    *,
+    format: MessageFormat | None,
+    rtl: bool,
+    noautolink: bool | None,
+):
+    if _is_native_rich_message(blocks):
+        return rich_message(blocks)
+    if isinstance(blocks, RichBlocks) and blocks.native:
+        return rich_message(
+            blocks,
+            format=format,
+            rtl=rtl,
+            noautolink=noautolink,
+        )
+    markup = rich_markup_from_blocks(blocks, format=format)
+    return rich_message(markup, rtl=rtl, noautolink=noautolink)
 
 
 async def send_rich(
@@ -1150,10 +1615,8 @@ async def send_rich(
     peer: Any,
     blocks: Any,
     *,
-    engine: Engine | None = None,
     format: MessageFormat | None = None,
-    is_premium: bool | None = None,
-    is_bot: bool | None = None,
+    plain_text: str | None = None,
     reply_to: Any = None,
     buttons: Any = None,
     rtl: bool = False,
@@ -1162,107 +1625,95 @@ async def send_rich(
     background: bool | None = None,
     link_preview: bool = False,
 ) -> Any:
-    """Send *blocks* as a Rich Message, with a guaranteed plain-text fallback.
+    """Send only a native layer-230 RichMessage using ``SendMessageRequest``.
 
-    Tries the native path first: a raw ``messages.SendMessageRequest(...,
-    rich_message=InputRichMessageHTML(...))``  -  never
-    ``client.send_message(rich_message=...)`` (the fork's high-level kwarg
-    may not be present on every pinned checkout; the raw request is the
-    required baseline whenever the TL schema itself has the field). The
-    plain-text ``message``/``entities`` rendered from the *same* blocks
-    ride along in that same request, so a viewer whose client can't render
-    ``RichMessage`` still gets a legible message (risk #2 in the plan).
-
-    If ``InputRichMessageHTML``/``rich_message`` is unavailable on this
-    Telethon build, or the raw send itself raises for *any* reason
-    (unsupported server, stale pinned commit, ...), this transparently
-    falls back to ``client.send_message`` with that same rendered
-    text/entities  -  the public API is identical either way.
+    RPC errors propagate. There is no call to ``client.send_message``, no
+    downgrade to message entities, and no unverified RichMessage media path.
     """
-    block_list = normalize_blocks(blocks)
-    render_input = blocks if isinstance(blocks, RichMarkup) else block_list
-    # legacy still interfering
-    builder_policy = isinstance(blocks, RichBlocks) and any(
-        value is not None for value in (blocks.is_bot, blocks.is_premium)
-    )
-    builder_engine = isinstance(blocks, RichBlocks) and blocks.engine != "auto"
-    legacy_compat = (
-        engine is None
-        and is_bot is None
-        and is_premium is None
-        and not builder_policy
-        and not builder_engine
-    )
-    if legacy_compat:
-        client = rich_sender(client)
-    resolved_bot = _client_me_flag(client, "bot") if is_bot is None else is_bot
-
-    resolved_premium = (
-        _client_me_flag(client, "premium") if is_premium is None else is_premium
-    )
-
-    selected, format, _, _ = _policy(
-        blocks, engine, format, resolved_premium, resolved_bot
-    )
-    text, entities = _fallback_text_entities(render_input, format=format)
-    text = text or " "
-    if selected == "legacy":
-        with _legacy_dispatch():
-            return await client.send_message(
-                peer,
-                text,
-                formatting_entities=entities or None,
-                parse_mode=None,
-                reply_to=reply_to,
-                buttons=buttons,
-                silent=silent,
-                background=background,
-                link_preview=link_preview,
-            )
-    # native
-    native = rich_message(
-        render_input,
-        engine="rich",
+    input_peer = await client.get_input_entity(peer)
+    native = await _prepare_rich_message(
+        client,
+        input_peer,
+        blocks,
         format=format,
-        is_premium=resolved_premium,
-        is_bot=resolved_bot,
         rtl=rtl,
         noautolink=noautolink,
     )
-    input_peer = await client.get_input_entity(peer)
+    text = (
+        plain_text
+        if plain_text is not None
+        else _plain_message_text(blocks, format=format)
+    ) or " "
     request = _functions.messages.SendMessageRequest(
         peer=input_peer,
         message=text,
-        entities=entities or None,
         no_webpage=not link_preview,
         silent=silent,
         background=background,
         reply_to=_build_reply_to(reply_to),
-        reply_markup=client.build_reply_markup(buttons),
+        reply_markup=_build_reply_markup(client, buttons),
         rich_message=native,
     )
-    try:
-        result = await client(request)
-    except RPCError:
-        with _legacy_dispatch():
-            return await client.send_message(
-                peer,
-                text,
-                formatting_entities=entities or None,
-                parse_mode=None,
-                reply_to=reply_to,
-                buttons=buttons,
-                silent=silent,
-                background=background,
-                link_preview=link_preview,
-            )
+    result = await call_rich_request(
+        client, request, content=request.rich_message, target_kind="peer"
+    )
     getter = getattr(client, "_get_response_message", None)
     if getter is not None:
         try:
-            return getter(request, result, input_peer)
-        except (TypeError, ValueError):
+            adapted = getter(request, result, input_peer)
+            if adapted is not None:
+                result = adapted
+        except (AttributeError, TypeError, ValueError):
             pass
-    return result
+    return _sent_message_reference(result)
+
+
+async def edit_inline_plain(
+    client: Any,
+    inline_id: Any,
+    text: str,
+    *,
+    buttons: Any = None,
+    link_preview: bool = False,
+) -> Any:
+    """Edit an inline bot message as plain text using raw layer-230 MTProto.
+
+    This is a constrained fallback for servers that reject an inline
+    ``RichMessage`` with ``RICH_MESSAGE_UNSUPPORTED``. It never calls the
+    Bot API or Telethon's legacy message-edit convenience method.
+    """
+    inline_types = (_types.InputBotInlineMessageID, _types.InputBotInlineMessageID64)
+    if not isinstance(inline_id, inline_types):
+        raise TypeError("edit_inline_plain requires a Telegram inline message ID")
+    if not isinstance(text, str):
+        raise TypeError("edit_inline_plain text must be str")
+
+    request = _functions.messages.EditInlineBotMessageRequest(
+        id=inline_id,
+        message=text or " ",
+        no_webpage=not link_preview,
+        reply_markup=_build_reply_markup(client, buttons),
+    )
+    route = getattr(client, "route", None)
+    request_client = route() if callable(route) else client
+    session = getattr(request_client, "session", None)
+    if session is not None and session.dc_id != inline_id.dc_id:
+        sender = await request_client._borrow_exported_sender(inline_id.dc_id)
+        try:
+            call = call_rich_request(
+                request_client, request, content=request.rich_message,
+                target_kind="inline_exported", sender=sender,
+            )
+        except Exception:
+            await request_client._return_exported_sender(sender)
+            raise
+        try:
+            return await call
+        finally:
+            await request_client._return_exported_sender(sender)
+    return await call_rich_request(
+        request_client, request, content=request.rich_message, target_kind="inline"
+    )
 
 
 async def edit_rich(
@@ -1271,75 +1722,41 @@ async def edit_rich(
     msg_id: Any,
     blocks: Any,
     *,
-    engine: Engine | None = None,
     format: MessageFormat | None = None,
-    is_premium: bool | None = None,
-    is_bot: bool | None = None,
+    plain_text: str | None = None,
     buttons: Any = None,
     rtl: bool = False,
     noautolink: bool | None = None,
     link_preview: bool = False,
 ) -> Any:
-    """Edit message *msg_id* in *peer* to render *blocks* as a Rich Message.
-
-    Same native-then-plain-text-fallback contract as :func:`send_rich`, via
-    a raw ``messages.EditMessageRequest`` or
-    ``messages.EditInlineBotMessageRequest`` with ``rich_message=...``.
-    """
-    block_list = normalize_blocks(blocks)
-    render_input = blocks if isinstance(blocks, RichMarkup) else block_list
+    """Edit only through raw layer-230 ``EditMessageRequest`` variants."""
     inline_types = (_types.InputBotInlineMessageID, _types.InputBotInlineMessageID64)
     inline_id = peer if isinstance(peer, inline_types) else None
     mid = None if inline_id is not None else _get_message_id(msg_id)
     if inline_id is None and mid is None:
         raise ValueError(f"edit_rich: could not resolve a message id from {msg_id!r}")
-    resolved_bot = _client_me_flag(client, "bot") if is_bot is None else is_bot
-    resolved_premium = (
-        _client_me_flag(client, "premium") if is_premium is None else is_premium
-    )
-    selected, format, _, _ = _policy(
-        blocks, engine, format, resolved_premium, resolved_bot
-    )
-    fallback = legacy_message(render_input, format=format)
-    text = fallback.text or " "
-    entities = fallback.entities
-    if selected == "legacy":
-        with _legacy_dispatch():
-            if inline_id is not None:
-                return await client.edit_message(
-                    inline_id,
-                    text,
-                    formatting_entities=entities or None,
-                    parse_mode=None,
-                    buttons=buttons,
-                    link_preview=link_preview,
-                )
-            return await client.edit_message(
-                peer,
-                mid,
-                text,
-                formatting_entities=entities or None,
-                parse_mode=None,
-                buttons=buttons,
-                link_preview=link_preview,
-            )
 
-    native = rich_message(
-        render_input,
-        engine="rich",
+    input_peer = None if inline_id is not None else await client.get_input_entity(peer)
+    native = await _prepare_rich_message(
+        client,
+        input_peer,
+        blocks,
         format=format,
-        is_premium=resolved_premium,
-        is_bot=resolved_bot,
         rtl=rtl,
         noautolink=noautolink,
     )
+    text = (
+        plain_text
+        if plain_text is not None
+        else _plain_message_text(blocks, format=format)
+    ) or " "
+    markup = _build_reply_markup(client, buttons)
     if inline_id is not None:
         request = _functions.messages.EditInlineBotMessageRequest(
             id=inline_id,
             message=text,
-            entities=entities or None,
             no_webpage=not link_preview,
-            reply_markup=client.build_reply_markup(buttons),
+            reply_markup=markup,
             rich_message=native,
         )
         route = getattr(client, "route", None)
@@ -1348,60 +1765,32 @@ async def edit_rich(
         if session is not None and session.dc_id != inline_id.dc_id:
             sender = await request_client._borrow_exported_sender(inline_id.dc_id)
             try:
-                call = request_client._call(sender, request)
-                use_exported = True
+                call = call_rich_request(
+                    request_client, request, content=request.rich_message,
+                    target_kind="inline_exported", sender=sender,
+                )
             except Exception:
                 await request_client._return_exported_sender(sender)
                 raise
-        else:
-            sender = None
-            call = request_client(request)
-            use_exported = False
-    else:
-        input_peer = await client.get_input_entity(peer)
-        request = _functions.messages.EditMessageRequest(
-            peer=input_peer,
-            id=mid,
-            message=text,
-            entities=entities or None,
-            no_webpage=not link_preview,
-            reply_markup=client.build_reply_markup(buttons),
-            rich_message=native,
-        )
-        sender = None
-        call = client(request)
-        use_exported = False
-    try:
-        result = await call
-    except RPCError:
-        if inline_id is not None:
-            if use_exported:
+            try:
+                return await call
+            finally:
                 await request_client._return_exported_sender(sender)
-                use_exported = False
-            with _legacy_dispatch():
-                return await client.edit_message(
-                    inline_id,
-                    text,
-                    formatting_entities=entities or None,
-                    parse_mode=None,
-                    buttons=buttons,
-                    link_preview=link_preview,
-                )
-        with _legacy_dispatch():
-            return await client.edit_message(
-                peer,
-                mid,
-                text,
-                formatting_entities=entities or None,
-                parse_mode=None,
-                buttons=buttons,
-                link_preview=link_preview,
-            )
-    finally:
-        if use_exported:
-            await request_client._return_exported_sender(sender)
-    if inline_id is not None:
-        return result
+        return await call_rich_request(
+            request_client, request, content=request.rich_message, target_kind="inline"
+        )
+
+    request = _functions.messages.EditMessageRequest(
+        peer=input_peer,
+        id=mid,
+        message=text,
+        no_webpage=not link_preview,
+        reply_markup=markup,
+        rich_message=native,
+    )
+    result = await call_rich_request(
+        client, request, content=request.rich_message, target_kind="peer"
+    )
     getter = getattr(client, "_get_response_message", None)
     if getter is not None:
         try:

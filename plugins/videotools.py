@@ -48,7 +48,7 @@ from . import (
 )
 
 from custom.fmt import fmtmsg, fmtbyte
-from custom.rich import parse_rich
+from custom.entities import parse_rich
 
 # --------------------------------------------------------------------------- #
 #  Helpers                                                                    #

@@ -421,6 +421,14 @@ def test_message_formatter_matches_legacy(misc, text):
         assert actual == expected
 
 
+def test_message_formatter_preserves_strong_and_nested_html(misc):
+    MessageFormatter = misc._assistant.MessageFormatter
+    formatter = MessageFormatter(build=recorder_fmtmsg)
+    text = "<strong>Help</strong>\n<code>.help</code> &amp; more"
+    assert formatter.already_html(text)
+    assert formatter.format(text, "Assistant") == text
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -474,7 +482,7 @@ def test_patcher_skips_absent_methods(misc, ):
     assert not hasattr(event, "reply")
 
 
-def test_patcher_forces_html_when_caller_is_silent(misc, ):
+def test_patcher_uses_rich_html_without_legacy_parse_mode(misc, ):
     import asyncio
 
     AssistantEventPatcher = misc._assistant.AssistantEventPatcher
@@ -483,9 +491,37 @@ def test_patcher_forces_html_when_caller_is_silent(misc, ):
     AssistantEventPatcher()(event, "Assistant")
     asyncio.run(event.reply("hello\nworld"))
     text, kwargs = event.calls[-1]
-    assert kwargs["parse_mode"] == "html"
-    # the stubbed custom.fmt.fmtmsg renders as (head, msgs)
-    assert text == ("FMT", "hello", "world")
+    assert "parse_mode" not in kwargs
+    assert text in (
+        "<b>hello</b>\n\n<blockquote expandable>world</blockquote>",
+        ("FMT", "hello", "world"),
+    )
+
+
+def test_patcher_marks_raw_html_for_native_rich_edits(misc):
+    import asyncio
+
+    event = FakeEvent()
+    AssistantEventPatcher = misc._assistant.AssistantEventPatcher
+    AssistantEventPatcher()(event)
+    asyncio.run(event.edit("<b>Already formatted</b>", parse_mode="html"))
+    text, kwargs = event.calls[-1]
+    assert str(text) == "<b>Already formatted</b>"
+    assert getattr(text, "__rich_format__", None) == "html"
+    assert "parse_mode" not in kwargs
+
+
+def test_patcher_passes_rich_blocks_through_without_string_formatting(misc):
+    import asyncio
+
+    event = FakeEvent()
+    AssistantEventPatcher = misc._assistant.AssistantEventPatcher
+    AssistantEventPatcher()(event)
+    blocks = object()
+    asyncio.run(event.edit(blocks, parse_mode="html"))
+    text, kwargs = event.calls[-1]
+    assert text is blocks
+    assert "parse_mode" not in kwargs
 
 
 def test_patcher_leaves_an_explicit_parse_mode_alone(misc, ):

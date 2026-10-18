@@ -7,6 +7,7 @@ normalized, capability policy is applied, and the agent is invoked.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -31,6 +32,7 @@ GROUP_SAFE_CAPS = frozenset(
         "shell_write",
         "fs_write",
         "tg_send",
+        "tg.file_send",
         "res_install",
         "tg_raw",
         "agent.spawn",
@@ -86,10 +88,12 @@ class AgentRequest:
     temperature: float | None = None
     max_rounds: int | None = None
     use_tools: bool | None = None
+    rich_messages_allowed: bool | None = None
     use_history: bool = True
     use_cache: bool = True
     caps: frozenset[str] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    timeout_seconds: float | None = None
 
 
 class AgentRuntime:
@@ -139,15 +143,18 @@ class AgentRuntime:
                 else controls["rounds"]
             ),
             use_tools=tools,
+            rich_messages_allowed=request.rich_messages_allowed,
             use_history=request.use_history,
             use_cache=request.use_cache,
             caps=caps,
             metadata=dict(request.metadata),
+            timeout_seconds=request.timeout_seconds,
         )
 
     async def runtime_run(self, request: AgentRequest) -> AgentResponse:
         prepared = self.runtime_prepare(request)
-        return await self.agent.respond(
+        started = time.monotonic()
+        response = self.agent.respond(
             user_message=prepared.prompt,
             chat_id=prepared.chat_id,  # type: ignore[arg-type]
             provider_name=prepared.provider,
@@ -163,7 +170,27 @@ class AgentRuntime:
             max_rounds=prepared.max_rounds,
             scope=prepared.origin,
             caps=prepared.caps,
+            rich_messages_allowed=prepared.rich_messages_allowed,
         )
+        if prepared.timeout_seconds is None:
+            return await response
+        try:
+            return await asyncio.wait_for(
+                response, timeout=prepared.timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            limit = float(prepared.timeout_seconds)
+            message = (
+                f"The agent request exceeded its {limit:g}-second time limit. "
+                "Try a smaller request or run the steps separately."
+            )
+            return AgentResponse(
+                content=message,
+                provider="runtime",
+                model="timeout",
+                duration_ms=(time.monotonic() - started) * 1000,
+                error=message,
+            )
 
     def runtime_stream(self, request: AgentRequest):
         """Yield normalized streaming chunks for *request*."""
@@ -178,10 +205,9 @@ class AgentRuntime:
                 else 0.7
             ),
             model=prepared.model,
+            rich_messages_allowed=prepared.rich_messages_allowed,
         )
 
     def runtime_executor(self, request: AgentRequest):
         prepared = self.runtime_prepare(request)
         return make_executor(prepared.chat_id, caps=prepared.caps)  # type: ignore[arg-type]
-
-

@@ -20,7 +20,6 @@ class RuntimeCapabilities:
     managed_bot_updates: bool = False
     token_rotation: bool = False
     inline_query: bool = False
-    rich_message: bool = False
     styled_buttons: bool = False
 
 
@@ -53,9 +52,6 @@ def capabilities(
         ),
         token_rotation=bool(bots and hasattr(bots, "ExportBotTokenRequest")),
         inline_query=inline_query,
-        # SarahUB pins the Layer 228 fork; no per-symbol Layer-227 probe is
-        # needed, but an absent Telethon module still means no runtime.
-        rich_message=bool(types_module),
         styled_buttons=bool(
             types_module and hasattr(types_module, "KeyboardButtonStyle")
         ),

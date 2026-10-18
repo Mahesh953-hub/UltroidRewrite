@@ -1662,6 +1662,57 @@ class OpenRouterProvider(ConfigurableOpenAIProvider):
     default_base_url = "https://openrouter.ai/api/v1"
     fallback_model = "openai/gpt-4o-mini"
 
+    @staticmethod
+    def _model_unavailable(error: str | None) -> bool:
+        """Recognize OpenRouter's model-specific 404 responses."""
+        message = (error or "").lower()
+        return any(
+            marker in message
+            for marker in ("no endpoints found", "model not found", "unknown model")
+        )
+
+    async def complete(
+        self,
+        messages,
+        model=None,
+        tools=None,
+        max_tokens=1024,
+        temperature=0.7,
+        system=None,
+    ):
+        """Retry an unavailable configured model once with the safe default."""
+        requested_model = model or self.default_model
+        response = await super().complete(
+            messages,
+            model=requested_model,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system,
+        )
+        if (
+            response.ok
+            or requested_model == self.fallback_model
+            or not self._model_unavailable(response.error)
+        ):
+            return response
+
+        fallback = await super().complete(
+            messages,
+            model=self.fallback_model,
+            tools=tools,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system,
+        )
+        if not fallback.ok:
+            fallback.error = (
+                f"Configured OpenRouter model {requested_model!r} has no available "
+                f"endpoint; fallback {self.fallback_model!r} also failed: "
+                f"{fallback.error}"
+            )
+        return fallback
+
 
 class ProviderTemplate(ConfigurableOpenAIProvider):
     """Template for a new OpenAI-compatible provider.
@@ -2002,6 +2053,7 @@ class ProviderRegistry:
             OpenAICompatProvider(),
             GroqProvider(),
             GeminiProvider(),
+            ApimixProvider(),
             OpenRouterProvider(),
             OpenAIProvider(),
             AnthropicProvider(),
@@ -2034,5 +2086,3 @@ class ProviderRegistry:
 
     def provider_health(self) -> dict[str, bool]:
         return {p.name: p.is_configured() for p in self._all}
-
-

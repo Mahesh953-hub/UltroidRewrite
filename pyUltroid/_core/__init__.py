@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 # NOTE: this package must never import the union (``pyUltroid.ultroid``) -
 # the composition root imports this package's mixins first, so a union
 # re-export here is a circular import. Consumers import the union from
@@ -53,7 +52,6 @@ from .webupload import (
     resolve_service,
     upload_to,
 )
-
 __all__ = [
     "QueueManager",
     "QueueTask",

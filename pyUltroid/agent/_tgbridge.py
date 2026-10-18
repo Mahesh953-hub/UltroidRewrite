@@ -16,6 +16,7 @@ __all__ = (
     "resolve_entity",
     "run_tg_call",
     "send_via_master",
+    "send_file_via_master",
     "read_recent",
     "resolve_raw_function",
     "invoke_raw",
@@ -134,9 +135,18 @@ async def send_via_master(
     reply_to: int | None = None,
     parse_mode: str | None = None,
     link_preview: bool = True,
+    rich: bool = False,
 ) -> dict:
-    """Send *text* through the master router with an explicit route hint."""
+    """Send plain text by default, or native RichMessage when explicitly asked."""
     from pyUltroid import master
+    from pyUltroid._core.richmsg import (
+        RichMarkup,
+        blocks_to_plain_text,
+        client_can_send_rich_message,
+        send_rich,
+    )
+
+    from ._telegram import rich_output
 
     try:
         client = _pick_route_client(master, route)
@@ -147,9 +157,53 @@ async def send_via_master(
     kwargs: dict[str, Any] = {"link_preview": link_preview}
     if reply_to is not None:
         kwargs["reply_to"] = int(reply_to)
-    if parse_mode:
-        kwargs["parse_mode"] = parse_mode
-    result = await run_tg_call(client.send_message, entity, text, **kwargs)
+
+    if rich:
+        if not await client_can_send_rich_message(client):
+            return {
+                "ok": False,
+                "error": (
+                    "Native RichMessages require a bot account or a confirmed "
+                    "Telegram Premium user account. Send with rich=false for "
+                    "ordinary plain text. No RichMessage request was sent."
+                ),
+            }
+        if parse_mode is None:
+            content = rich_output(text)
+        else:
+            mode = str(parse_mode).strip().lower()
+            if mode in {"md", "markdown", "markdownv3"}:
+                mode = "markdown"
+            elif mode != "html":
+                return {
+                    "ok": False,
+                    "error": "parse_mode must be HTML, Markdown, or omitted for automatic detection.",
+                }
+            content = RichMarkup(text, format=mode)
+        result = await run_tg_call(send_rich, client, entity, content, **kwargs)
+    else:
+        if parse_mode is None:
+            markup = rich_output(text)
+        else:
+            mode = str(parse_mode).strip().lower()
+            if mode in {"md", "markdownv3"}:
+                mode = "markdown"
+            elif mode not in {"html", "markdown"}:
+                return {
+                    "ok": False,
+                    "error": "parse_mode must be HTML, Markdown, or omitted for automatic detection.",
+                }
+            markup = RichMarkup(text, format=mode)
+        plain_text = blocks_to_plain_text(markup)
+        if not plain_text.strip():
+            return {"ok": False, "error": "Plain-text message cannot be empty."}
+        result = await run_tg_call(
+            client.send_message,
+            entity,
+            plain_text,
+            parse_mode=None,
+            **kwargs,
+        )
     if result.get("ok"):
         sent = result.get("result")
         return {
@@ -159,6 +213,39 @@ async def send_via_master(
             "chat_id": getattr(getattr(sent, "peer_id", None), "user_id", None)
             or getattr(getattr(sent, "peer_id", None), "channel_id", None)
             or getattr(getattr(sent, "peer_id", None), "chat_id", None),
+        }
+    return result
+
+
+async def send_file_via_master(
+    file_obj: Any,
+    entity_ref: Any,
+    *,
+    route: str = "auto",
+    caption: str | None = None,
+) -> dict:
+    """Send an in-memory attachment through the master router as plain text."""
+    from pyUltroid import master
+
+    try:
+        client = _pick_route_client(master, route)
+    except (ValueError, RuntimeError) as e:
+        return {"ok": False, "error": str(e)}
+
+    entity = parse_entity_ref(entity_ref)
+    result = await run_tg_call(
+        client.send_file,
+        entity,
+        file_obj,
+        caption=caption,
+        parse_mode=None,
+    )
+    if result.get("ok"):
+        sent = result.get("result")
+        return {
+            "ok": True,
+            "route": route,
+            "message_id": getattr(sent, "id", None),
         }
     return result
 

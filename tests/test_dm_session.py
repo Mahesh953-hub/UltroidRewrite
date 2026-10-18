@@ -8,8 +8,8 @@ Covers the production failure:
 The DM flow now builds its history key with :class:`DmSessionKey` instead of a
 bare string, and ``chat_system``/``set_chat_system``/``reset_chat_system``
 normalize through :class:`ChatKey` so string and numeric ids live in distinct
-slots. Delivery is threaded: the placeholder, the edit, and the fallback
-reply all target the user's triggering message, never a standalone send.
+slots. Delivery is threaded to the user's triggering message; a failed edit
+does not create a duplicate fallback answer.
 """
 
 from __future__ import annotations
@@ -165,21 +165,22 @@ def test_delivery_render_edits_in_place_when_possible():
     assert result is placeholder
 
 
-def test_delivery_falls_back_to_reply_when_edit_fails():
-    """Edit failure -> a fresh reply to the trigger, never a standalone send."""
+def test_delivery_edit_failure_does_not_duplicate_answer_as_reply():
+    """A failed edit is reported instead of sending a second attached answer."""
 
     trigger = _FakeMessage()
     placeholder = _BrokenEditMessage()
     delivery = _SessionDelivery(trigger)
 
-    result = _run(delivery.render(placeholder, "the answer"))
+    with pytest.raises(_DeliveryError) as ei:
+        _run(delivery.render(placeholder, "the answer"))
     assert placeholder.edited == []
-    assert trigger.replied_to == ["the answer"]
-    assert result is trigger
+    assert trigger.replied_to == []
+    assert ei.value.phase == "plain_edit"
 
 
-def test_delivery_edit_failure_does_not_escape():
-    """A failing placeholder edit is converted to the fallback reply."""
+def test_delivery_edit_and_trigger_reply_failures_remain_structured():
+    """A failed placeholder edit stays a structured delivery error."""
 
     trigger = _BrokenReplyMessage()
     placeholder = _BrokenEditMessage()
@@ -187,7 +188,30 @@ def test_delivery_edit_failure_does_not_escape():
 
     with pytest.raises(_DeliveryError) as ei:
         _run(delivery.render(placeholder, "the answer"))
-    assert ei.value.phase == "fallback"
+    assert ei.value.phase == "plain_edit"
+
+
+def test_bot_rich_edit_failure_never_sends_a_second_reply(monkeypatch):
+    from types import SimpleNamespace
+
+    from pyUltroid._core import richmsg
+
+    trigger = _FakeMessage()
+    trigger.client = SimpleNamespace(_bot=True)
+    trigger.chat_id = -10055
+    trigger.id = 7
+    placeholder = _FakeMessage()
+    delivery = _SessionDelivery(trigger)
+
+    async def fail_edit(*_args, **_kwargs):
+        raise RuntimeError("native RichMessage edit rejected")
+
+    monkeypatch.setattr(richmsg, "edit_rich", fail_edit)
+
+    with pytest.raises(_DeliveryError) as ei:
+        _run(delivery.render(placeholder, "rich answer"))
+    assert ei.value.phase == "rich_edit"
+    assert trigger.replied_to == []
 
 
 def test_delivery_placeholder_failure_is_reported():

@@ -150,11 +150,11 @@ def test_a_typed_dm_answers_a_blocked_ask_user_call():
         await asyncio.sleep(0)
         # a private message arriving from the user
         outcome = bridge.submit_text(7, ("Grace", []))
-        return task, outcome
+        return await task, outcome
 
-    task, outcome = asyncio.run(scenario())
+    result, outcome = asyncio.run(scenario())
     assert outcome.answered and outcome.value == "Grace"
-    assert asyncio.run(task)["user_response"] == "Grace"
+    assert result["user_response"] == "Grace"
 
 
 def test_a_tap_in_another_chat_does_not_answer():

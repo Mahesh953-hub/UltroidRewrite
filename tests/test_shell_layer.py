@@ -10,6 +10,8 @@ Written before the union, against the existing classes.
 from __future__ import annotations
 
 import asyncio
+import shlex
+import sys
 
 import pytest
 
@@ -22,11 +24,10 @@ from pyUltroid.shell import (
     ShellSession,
     TrustLevel,
 )
-from pyUltroid.shell._executor import ShellExecutor
+from pyUltroid.shell._executor import MAX_OUTPUT_BYTES, ShellExecutor
 from pyUltroid.shell._router import ShellRouter
 from pyUltroid.shell._security import SecurityGuard
 from pyUltroid.shell._session import HistoryEntry, ShellSessionManager
-
 
 # ── context / capability ────────────────────────────────────────────────────
 
@@ -156,17 +157,20 @@ def test_a_cap_the_caller_lacks_is_refused(guard):
     assert guard.check(exec_ctx, "ls").allowed is True
 
 
-def test_the_guard_does_not_read_a_redirection_as_a_write(guard):
-    """A real gap, pinned deliberately.
-
-    SHELL_WRITE is not granted here, yet ``> file`` passes. The guard matches
-    command *shape* against BLOCKED_PATTERNS and checks one cap per command;
-    it does not parse a redirection into a separate write. Recorded so that a
-    future change to the cap model is a conscious decision.
-    """
+def test_output_redirection_requires_shell_write(guard):
     ctx = ExecutionContext.for_ai(frozenset({Cap.SHELL_EXEC}), chat_id=1)
     assert ctx.can_shell_write() is False
-    assert guard.check(ctx, "echo hi > out.txt").allowed is True
+    denied = guard.check(ctx, "echo hi > out.txt")
+    assert denied.allowed is False
+    assert "shell.write" in denied.reason
+
+    assert guard.check(ctx, "echo '>'").allowed is True
+    assert guard.check(ctx, "cat < input.txt").allowed is True
+
+    writer = ExecutionContext.for_ai(
+        frozenset({Cap.SHELL_EXEC, Cap.SHELL_WRITE}), chat_id=1
+    )
+    assert guard.check(writer, "echo hi > out.txt").allowed is True
 
 
 def test_a_denial_carries_a_reason(guard):
@@ -217,7 +221,16 @@ def test_session_env_and_cwd_round_trip():
 
 def test_history_records_and_reads_back():
     s = ShellSession(session_id="s3", owner="owner:1")
-    s.add_history(HistoryEntry(command="ls", stdout="out", stderr="", exit_code=0, cwd="/tmp", duration_ms=5))
+    s.add_history(
+        HistoryEntry(
+            command="ls",
+            stdout="out",
+            stderr="",
+            exit_code=0,
+            cwd="/tmp",
+            duration_ms=5,
+        )
+    )
     last = s.last_n(1)
     assert last and last[0].command == "ls"
 
@@ -302,3 +315,32 @@ def test_result_becomes_a_history_entry(tmp_path):
     result = asyncio.run(executor.run("echo x", session, timeout=30))
     entry = result.to_history_entry()
     assert entry.command == "echo x"
+
+
+def test_executor_bounds_output_during_pipe_reading(tmp_path):
+    executor = ShellExecutor()
+    session = _session(tmp_path, "bounded-output")
+    code = "import sys; sys.stdout.write('x' * 1500000)"
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
+
+    result = asyncio.run(executor.run(command, session, timeout=30))
+
+    assert result.exit_code == 0
+    assert result.truncated is True
+    assert len(result.stdout.encode("utf-8")) <= MAX_OUTPUT_BYTES
+
+
+def test_executor_stream_caps_and_marks_output(tmp_path):
+    executor = ShellExecutor()
+    session = _session(tmp_path, "bounded-stream")
+    code = "import sys; sys.stdout.write('x' * 1500000)"
+    command = f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
+
+    async def collect():
+        return [chunk async for chunk in executor.stream(command, session, timeout=30)]
+
+    chunks = asyncio.run(collect())
+    output = "".join(text for text, _kind in chunks if "OUTPUT TRUNCATED" not in text)
+
+    assert len(output.encode("utf-8")) <= MAX_OUTPUT_BYTES
+    assert chunks[-1] == ("\n[OUTPUT TRUNCATED]\n", "stderr")

@@ -1,2 +1,2 @@
-__version__ = "20.09.2026"
-ultroid_version = "20.09.2026[fork]"
+__version__ = "14.10.2026"
+ultroid_version = "14.10.2026[fork]"

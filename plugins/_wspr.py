@@ -17,6 +17,7 @@ from telethon.tl import types
 from telethon.tl.functions.users import GetFullUserRequest as gu
 
 from custom.tg import ikm
+from pyUltroid._core.events import InlineResultBuilder
 from pyUltroid.fns import fns
 
 from . import (
@@ -68,7 +69,7 @@ async def _(e):
         if not isinstance(logi, types.User):
             raise ValueError("Invalid Username.")
     except IndexError:
-        sur = await e.builder.article(
+        sur = await InlineResultBuilder(e).article(
             title="Give Username",
             description="You Didn't Type Username or id.",
             text="You Didn't Type Username or id.",
@@ -76,7 +77,7 @@ async def _(e):
         return await e.answer([sur])
     except ValueError as er:
         LOGS.exception(er)
-        sur = await e.builder.article(
+        sur = await InlineResultBuilder(e).article(
             title="User Not Found",
             description="Make sure username or id is correct.",
             text="Make sure username or id is correct.",
@@ -85,7 +86,7 @@ async def _(e):
     try:
         desc = zzz[2]
     except IndexError:
-        sur = await e.builder.article(
+        sur = await InlineResultBuilder(e).article(
             title="Type ur msg", text="You Didn't Type Your Msg"
         )
         return await e.answer([sur])
@@ -103,7 +104,7 @@ async def _(e):
         ]
     )
     us = logi.username or logi.first_name
-    sur = await e.builder.article(
+    sur = await InlineResultBuilder(e).article(
         title=logi.first_name,
         description=desc,
         text=get_string("wspr_1").format(us),
@@ -155,14 +156,14 @@ async def _(e):
                 same_peer=True,
             ),
         ]
-        sur = e.builder.article(
+        sur = await InlineResultBuilder(e).article(
             title=user.first_name,
             description=desc,
             text=text,
             buttons=button,
         )
     except IndexError:
-        sur = e.builder.article(
+        sur = await InlineResultBuilder(e).article(
             title="Give Username",
             description="You Didn't Type Username or id.",
             text="You Didn't Type Username or id.",
@@ -170,7 +171,7 @@ async def _(e):
     except Exception as er:
         LOGS.exception(er)
         name = get_string("wspr_4").format(query)
-        sur = e.builder.article(
+        sur = await InlineResultBuilder(e).article(
             title=name,
             text=name,
         )

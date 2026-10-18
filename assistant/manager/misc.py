@@ -46,7 +46,7 @@ async def oqha(e):
 @asst_cmd(pattern="kickme$")
 async def doit(e):
     if e.sender_id in DEVLIST:
-        return await eod(e, "`I will Not Kick You, my Developer..`")
+        return await eod(e, "I will Not Kick You, my Developer..")
     try:
         await e.client.kick_participant(e.chat_id, e.sender_id)
     except Exception as Fe:

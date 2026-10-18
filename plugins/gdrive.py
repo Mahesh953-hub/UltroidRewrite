@@ -42,10 +42,11 @@ import time
 import logging
 import glob as globmod
 
-from telethon.tl.types import InputRichMessageHTML, KeyboardButtonRow, ReplyInlineMarkup
+from telethon.tl.types import KeyboardButtonRow, ReplyInlineMarkup
 
 from pyUltroid.fns.gDrive import GDriveManager
 from pyUltroid.fns import fns
+from pyUltroid._core.richmsg import RichMarkup, send_rich
 
 from . import (
     HNDLR,
@@ -651,13 +652,11 @@ async def gdlist(e):
     )
     # Add keyboard if too many files
     if buttons:
-
-        await mone.client.send_message(
+        await send_rich(
+            mone.client,
             e.chat_id,
-            InputRichMessageHTML(
-                html="<b>📋 Navigate pages:</b>",
-                reply_markup=buttons,
-            ),
+            RichMarkup("<b>📋 Navigate pages:</b>", "html"),
+            buttons=buttons,
         )
 
 

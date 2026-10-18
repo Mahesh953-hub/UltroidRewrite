@@ -31,14 +31,23 @@ DC_IPV4 = {
 }
 
 
+def _session_message(key, fallback):
+    try:
+        from strings import get_string
+    except ImportError:
+        return fallback
+    return get_string(key)
+
+
 def validate_session(session, logger=LOGS, _exit=True):
-    from strings import get_string
 
     if session:
         # Telethon Session
         if session.startswith(CURRENT_VERSION):
             if len(session.strip()) != 353:
-                logger.exception(get_string("py_c1"))
+                logger.exception(
+                    _session_message("py_c1", "Wrong string session. Copy paste correctly!")
+                )
                 sys.exit()
             return StringSession(session)
 
@@ -66,9 +75,13 @@ def validate_session(session, logger=LOGS, _exit=True):
                 ).decode("ascii")
             )
         else:
-            logger.exception(get_string("py_c1"))
+            logger.exception(
+                _session_message("py_c1", "Wrong string session. Copy paste correctly!")
+            )
             if _exit:
                 sys.exit()
-    logger.exception(get_string("py_c2"))
+    logger.exception(
+        _session_message("py_c2", "No String Session found. Quitting...")
+    )
     if _exit:
         sys.exit()

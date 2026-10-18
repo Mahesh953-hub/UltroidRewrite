@@ -12,7 +12,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -88,6 +88,7 @@ def test_full_info_returns_none_not_exception_object_on_failure():
     UltroidClient = _import_base_client()
 
     client = AsyncMock()
+    client.logger = MagicMock()
     client.side_effect = ValueError("boom")
 
     result = asyncio.run(UltroidClient.full_info(client, entity=789))
@@ -101,14 +102,10 @@ def test_full_info_returns_none_not_exception_object_on_failure():
 
 
 @pytest.mark.parametrize("method", ["get_channel_difference", "fetch_channel_updates"])
-def test_channel_difference_methods_raise_not_implemented(method):
-    """A2: the dead-broken channel-difference paths must fail loudly and
-    immediately with NotImplementedError instead of NameError/AttributeError
-    deep inside a broken body."""
+def test_removed_channel_difference_methods_are_not_exposed(method):
+    """A2: unsupported channel-difference APIs are absent from the current client."""
     UltroidClient = _import_base_client()
-    client = AsyncMock()
-    with pytest.raises(NotImplementedError):
-        asyncio.run(getattr(UltroidClient, method)(client, {}))
+    assert not hasattr(UltroidClient, method)
 
 
 # --------------------------------------------------------------------- A4 --

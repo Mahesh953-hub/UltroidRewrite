@@ -112,7 +112,7 @@ except ImportError:
     _HAVE_PDF2IMAGE = False
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf as fitz
 
     _HAVE_FITZ = True
 except ImportError:

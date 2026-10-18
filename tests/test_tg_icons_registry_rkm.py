@@ -21,7 +21,6 @@ directly without the pyUltroid bootstrap (see ``tests/conftest.py``).
 
 from __future__ import annotations
 
-import pytest
 from telethon import Button
 from telethon.tl import types
 
@@ -87,9 +86,10 @@ def test_default_icon_type_fallback_for_url():
 
 def test_default_icon_type_fallback_for_switch_inline():
     btn = ikm([("Find", "switch_inline", "query")], icon=True)[0][0]
-    assert isinstance(btn, types.KeyboardButtonSwitchInline)
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeSwitchInline)
     assert btn.text == f"{DEFAULT_ICON_UNICODE['search']} Find"
-    assert btn.query == "query"
+    assert btn.type.query == "query"
 
 
 def test_default_icon_generic_callback_with_no_match_gets_no_icon():
@@ -173,9 +173,10 @@ def test_default_icon_leaves_unrelated_titles_untouched():
 
 def test_ikm_switch_inline_tuple_builds_native_button():
     btn = ikm([("Search", "switch_inline", "cats", True, "primary", 5)])[0][0]
-    assert isinstance(btn, types.KeyboardButtonSwitchInline)
-    assert btn.query == "cats"
-    assert btn.same_peer is True
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeSwitchInline)
+    assert btn.type.query == "cats"
+    assert btn.type.same_peer is True
     assert _styles(btn) == (True, None, None, 5)
 
 
@@ -226,8 +227,9 @@ def test_register_button_type_direct_call_form():
     finally:
         tg._BUTTON_TYPE_REGISTRY.pop("my_custom_kind", None)
 
-    assert isinstance(btn, types.KeyboardButtonCallback)
-    assert btn.data == b"registered"
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeCallback)
+    assert btn.type.data == b"registered"
     assert calls == [("Custom", "payload", ("Custom", "my_custom_kind", "payload"))]
 
 
@@ -241,7 +243,7 @@ def test_register_button_type_decorator_form():
     finally:
         tg._BUTTON_TYPE_REGISTRY.pop("my_decorated_kind", None)
 
-    assert btn.data == b"decorated"
+    assert btn.type.data == b"decorated"
 
 
 def test_register_button_type_never_shadows_builtin_url():
@@ -252,20 +254,23 @@ def test_register_button_type_never_shadows_builtin_url():
     finally:
         tg._BUTTON_TYPE_REGISTRY.pop("url", None)
     assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeUrl)
     assert btn.type.url == "https://example.com"
 
 
 def test_builtin_copy_registration_uses_native_keyboard_button_copy():
     btn = ikm([("Copy code", "copy", "ABC123")])[0][0]
-    assert isinstance(btn, types.KeyboardButtonCopy)
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeCopy)
     assert btn.text == "Copy code"
-    assert btn.copy_text == "ABC123"
+    assert btn.type.copy_text == "ABC123"
 
 
 def test_builtin_copy_registration_defaults_copy_text_to_button_text():
     btn = ikm([("ABC123", "copy")])[0][0]
-    assert isinstance(btn, types.KeyboardButtonCopy)
-    assert btn.copy_text == "ABC123"
+    assert isinstance(btn, types.KeyboardInlineButton)
+    assert isinstance(btn.type, types.InlineButtonTypeCopy)
+    assert btn.type.copy_text == "ABC123"
 
 
 def test_builtin_toggle_registration_reflects_on_off_state():
@@ -273,7 +278,7 @@ def test_builtin_toggle_registration_reflects_on_off_state():
     off_btn = ikm([("Notifications", "toggle", "notif_cb", False)])[0][0]
     assert on_btn.text == "☑️ Notifications"
     assert off_btn.text == "⬜ Notifications"
-    assert on_btn.data == off_btn.data == b"notif_cb"
+    assert on_btn.type.data == off_btn.type.data == b"notif_cb"
 
 
 def test_registered_kind_works_from_rkm_too():
@@ -320,23 +325,28 @@ def test_rkm_location_phone_poll_tuples():
     loc = rkm([("Share location", "location")])[0][0]
     phone = rkm([("Share phone", "phone")])[0][0]
     poll = rkm([("Make a poll", "poll", True)])[0][0]
-    assert isinstance(loc.button, types.KeyboardButtonRequestGeoLocation)
-    assert isinstance(phone.button, types.KeyboardButtonRequestPhone)
-    assert isinstance(poll.button, types.KeyboardButtonRequestPoll)
-    assert poll.button.quiz is True
+    assert isinstance(loc.button, types.KeyboardButton)
+    assert isinstance(loc.button.type, types.ButtonTypeRequestGeoLocation)
+    assert isinstance(phone.button, types.KeyboardButton)
+    assert isinstance(phone.button.type, types.ButtonTypeRequestPhone)
+    assert isinstance(poll.button, types.KeyboardButton)
+    assert isinstance(poll.button.type, types.ButtonTypeRequestPoll)
+    assert poll.button.type.quiz is True
 
 
 def test_rkm_request_peer_tuple_builds_raw_tl_button():
     btn = rkm([("Pick", "request_user", 5, 2, "primary", 9)])[0][0]
-    assert isinstance(btn, types.KeyboardButtonRequestPeer)
-    assert btn.max_quantity == 2
+    assert isinstance(btn, types.KeyboardButton)
+    assert isinstance(btn.type, types.ButtonTypeRequestPeer)
+    assert btn.type.max_quantity == 2
     assert (btn.style.bg_primary, btn.style.icon) == (True, 9)
 
 
 def test_rkm_web_app_tuple_forces_simple_webview():
     btn = rkm([("Open", "web_app", "https://example.com/app")])[0][0]
-    assert isinstance(btn, types.KeyboardButtonSimpleWebView)
-    assert btn.url == "https://example.com/app"
+    assert isinstance(btn, types.KeyboardButton)
+    assert isinstance(btn.type, types.ButtonTypeSimpleWebView)
+    assert btn.type.url == "https://example.com/app"
 
 
 def test_rkm_unknown_kind_degrades_to_text_button():
@@ -376,7 +386,8 @@ def test_rkm_keyboard_options_survive_on_raw_tl_buttons_too():
     peer_btn, web_btn = rows[0][0], rows[1][0]
 
     assert isinstance(peer_btn, Button)
-    assert isinstance(peer_btn.button, types.KeyboardButtonRequestPeer)
+    assert isinstance(peer_btn.button, types.KeyboardButton)
+    assert isinstance(peer_btn.button.type, types.ButtonTypeRequestPeer)
     assert (
         peer_btn.resize,
         peer_btn.single_use,
@@ -390,7 +401,8 @@ def test_rkm_keyboard_options_survive_on_raw_tl_buttons_too():
     )
 
     assert isinstance(web_btn, Button)
-    assert isinstance(web_btn.button, types.KeyboardButtonSimpleWebView)
+    assert isinstance(web_btn.button, types.KeyboardButton)
+    assert isinstance(web_btn.button.type, types.ButtonTypeSimpleWebView)
     assert (
         web_btn.resize,
         web_btn.single_use,

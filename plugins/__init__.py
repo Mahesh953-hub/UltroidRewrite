@@ -5,6 +5,8 @@
 # PLease read the GNU Affero General Public License in
 # <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
 
+from __future__ import annotations
+
 import asyncio
 import os
 import time
@@ -111,3 +113,80 @@ ATRA_COL = [
     "Moccasin",
     "PowderBlue",
 ]
+
+
+# Plugin modules import these names from their parent package. Keep that
+# surface backed by the unified fns object instead of recreating 80 wrappers.
+_FNS_COMPAT_EXPORTS = frozenset(
+    {
+        "Carbon",
+        "ReTrieveFile",
+        "allcmds",
+        "async_searcher",
+        "bash",
+        "check_filename",
+        "def_logs",
+        "downloader",
+        "duration_s",
+        "fast_download",
+        "genss",
+        "get_all_files",
+        "get_paste",
+        "get_random_user_data",
+        "heroku_logs",
+        "humanbytes",
+        "inline_mention",
+        "is_url_ok",
+        "json_parser",
+        "mediainfo",
+        "progress",
+        "restart",
+        "run_async",
+        "set_attributes",
+        "shutdown",
+        "split_list",
+        "stdr",
+        "text_set",
+        "time_formatter",
+        "un_plug",
+        "uploader",
+    }
+)
+
+
+def __getattr__(name):
+    """Resolve legacy plugin helper names from their unified owner."""
+    if name == "def_logs":
+        from pyUltroid.fns.helper import def_logs
+
+        value = def_logs
+    elif name == "heroku_logs":
+        from pyUltroid.fns.helper import heroku_logs
+
+        value = heroku_logs
+    elif name in _FNS_COMPAT_EXPORTS:
+        from pyUltroid.fns import fns
+
+        value = getattr(fns, name)
+    elif name == "Image":
+        from PIL import Image
+
+        value = Image
+    elif name == "safeinstall":
+        from pyUltroid.fns.helper import safeinstall
+
+        value = safeinstall
+    elif name in {"HELP", "LIST"}:
+        from pyUltroid.dB import _core
+
+        value = getattr(_core, name)
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = value
+    return value
+
+
+# Preserve the package's previous star-import behavior and include the lazy
+# helper names for addons that import the shared plugin surface.
+__all__ = [name for name in globals() if not name.startswith("_")]
+__all__.extend(sorted(_FNS_COMPAT_EXPORTS | {"Image", "HELP", "LIST"}))

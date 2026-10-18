@@ -11,7 +11,6 @@ import time
 from logging import Logger
 
 import aiofiles
-
 from telethon import TelegramClient
 from telethon import utils as telethon_utils
 from telethon.errors import (
@@ -20,18 +19,16 @@ from telethon.errors import (
     ApiIdInvalidError,
     AuthKeyDuplicatedError,
 )
-from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.users import GetFullUserRequest
 
 from ..configs import Var
-from . import *
+from ._loops import ensure_running_loop
 
 # ``LOGS`` is the shared process logger defined in ``startup/__init__``.
 # Import it directly so class definition cannot fail on the name, exactly
 # as every ``_core`` module does.
 from .logger import LOGS
-
-from ._loops import ensure_running_loop
 
 loop = ensure_running_loop()
 
@@ -44,7 +41,7 @@ def exponential_backoff(retry_count):
 class UltroidClient(TelegramClient):
     def __new__(cls, session, *args, bot_token=None, **kwargs):
         if cls is UltroidClient and bot_token is not None:
-            business_cls = globals().get("BusinessCapableClient")
+            business_cls = globals().get("BusinessBotsClient")
             if business_cls is not None:
                 return super().__new__(business_cls)
         return super().__new__(cls)
@@ -75,6 +72,125 @@ class UltroidClient(TelegramClient):
         super().__init__(session, **kwargs)
         self.run_in_loop(self.start_client(bot_token=bot_token))
         self.dc_id = self.session.dc_id
+
+    async def send_message(self, entity, message="", *args, **kwargs):
+        """Use raw RichMessage requests only for explicit rich payloads."""
+        from .._core.richmsg import (
+            RichBlocks,
+            RichMarkup,
+            _is_native_rich_message,
+            send_rich,
+        )
+
+        supplied = kwargs.pop("rich_message", None)
+        content = supplied if supplied is not None else message
+        rich_format = getattr(content, "__rich_format__", None)
+        if rich_format is not None:
+            content = RichMarkup(str(content), rich_format)
+        is_rich = (
+            supplied is not None
+            or rich_format is not None
+            or isinstance(content, (RichMarkup, RichBlocks))
+            or _is_native_rich_message(content)
+        )
+        if not is_rich:
+            return await super().send_message(entity, message, *args, **kwargs)
+        if args or kwargs.get("file"):
+            raise TypeError("RichMessage cannot be combined with positional/file send arguments")
+
+        allowed = {
+            "parse_mode", "format", "reply_to", "buttons", "silent", "background",
+            "link_preview", "no_webpage", "rtl", "noautolink",
+        }
+        unsupported = [
+            key for key, value in kwargs.items()
+            if key not in allowed and value not in (None, False)
+        ]
+        if unsupported:
+            raise TypeError(f"unsupported RichMessage send options: {', '.join(unsupported)}")
+        rich_format = kwargs.get("format") or rich_format
+        if rich_format is None and str(kwargs.get("parse_mode", "")).lower() in {"html", "markdown", "md"}:
+            rich_format = "markdown" if str(kwargs["parse_mode"]).lower() in {"markdown", "md"} else "html"
+        return await send_rich(
+            self,
+            entity,
+            content,
+            format=rich_format,
+            plain_text=message if supplied is not None and isinstance(message, str) else None,
+            reply_to=kwargs.get("reply_to"),
+            buttons=kwargs.get("buttons"),
+            rtl=bool(kwargs.get("rtl", False)),
+            noautolink=kwargs.get("noautolink"),
+            silent=kwargs.get("silent"),
+            background=kwargs.get("background"),
+            link_preview=kwargs.get("link_preview", not bool(kwargs.get("no_webpage", False))),
+        )
+
+    async def edit_message(self, entity, message=None, text=None, *args, **kwargs):
+        """Use raw RichMessage edits only for explicit rich payloads."""
+        from .._core.richmsg import (
+            RichBlocks,
+            RichMarkup,
+            _is_native_rich_message,
+            edit_rich,
+        )
+
+        supplied = kwargs.pop("rich_message", None)
+        content = supplied if supplied is not None else text
+        rich_format = getattr(content, "__rich_format__", None)
+        if rich_format is not None:
+            content = RichMarkup(str(content), rich_format)
+        is_rich = (
+            supplied is not None
+            or rich_format is not None
+            or isinstance(content, (RichMarkup, RichBlocks))
+            or _is_native_rich_message(content)
+        )
+        if not is_rich:
+            return await super().edit_message(entity, message, text, *args, **kwargs)
+        if args or kwargs.get("file"):
+            raise TypeError("RichMessage cannot be combined with positional/file edit arguments")
+
+        allowed = {
+            "format", "parse_mode", "buttons", "link_preview", "rtl", "noautolink"
+        }
+        unsupported = [
+            key for key, value in kwargs.items()
+            if key not in allowed and value not in (None, False)
+        ]
+        if unsupported:
+            raise TypeError(f"unsupported RichMessage edit options: {', '.join(unsupported)}")
+        rich_format = kwargs.get("format") or rich_format
+        parse_mode = kwargs.get("parse_mode")
+        if rich_format is None and str(parse_mode or "").lower() in {
+            "html", "markdown", "md"
+        }:
+            rich_format = "markdown" if str(parse_mode).lower() in {"markdown", "md"} else "html"
+        return await edit_rich(
+            self,
+            entity,
+            message,
+            content,
+            format=rich_format,
+            plain_text=text if supplied is not None and isinstance(text, str) else None,
+            buttons=kwargs.get("buttons"),
+            rtl=bool(kwargs.get("rtl", False)),
+            noautolink=kwargs.get("noautolink"),
+            link_preview=kwargs.get("link_preview", True),
+        )
+
+    async def send_file(self, entity, file, *args, **kwargs):
+        """Keep media sends on Telethon; RichMessage media uses send_rich."""
+        from .._core.richmsg import RichBlocks, RichMarkup, _is_native_rich_message
+
+        caption = kwargs.get("caption")
+        if (
+            isinstance(caption, (RichBlocks, RichMarkup))
+            or _is_native_rich_message(caption)
+            or getattr(caption, "__rich_format__", None) is not None
+        ):
+            raise TypeError("RichMessage is not a media caption; attach files with send_rich")
+        return await super().send_file(entity, file, *args, **kwargs)
 
     def __repr__(self):
         return f"<Ultroid.Client :\n self: {self.full_name}\n bot: {bool(self._bot)}\n>"
@@ -132,10 +248,10 @@ class UltroidClient(TelegramClient):
         # Delete original file after uploading
         to_delete = kwargs.get("to_delete", False)
         message = kwargs.get("message", f"Uploading {filename}...")
-        if kwargs.get("parse_mode"):
-            parse_mode = kwargs.get("parse_mode", "v2")
         by_bot = self._bot
         size = os.path.getsize(file)
+        if size <= 0:
+            raise ValueError("Cannot upload an empty file.")
         # Don't show progress bar when file size is less than 5MB.
         if size < 5 * 2**20:
             show_progress = False
@@ -153,28 +269,28 @@ class UltroidClient(TelegramClient):
                         except FileNotFoundError:
                             pass
                     return files["raw_file"], time.time() - start_time
-        from pyUltroid.fns.FastTelethon import upload_file
         from pyUltroid.fns import fns
+        from pyUltroid.fns.FastTelethon import upload_file
 
-        raw_file = None
-        while not raw_file:
-            with open(file, "rb") as f:
-                raw_file = await fns.upload_file(
-                    client=self,
-                    file=f,
-                    filename=filename,
-                    progress_callback=(
-                        (
-                            lambda completed, total: self.loop.create_task(
-                                _helper.progress(
-                                    completed, total, event, start_time, message
-                                )
+        with open(file, "rb") as f:
+            raw_file = await upload_file(
+                client=self,
+                file=f,
+                filename=filename,
+                progress_callback=(
+                    (
+                        lambda completed, total: self.loop.create_task(
+                            fns.progress(
+                                completed, total, event, start_time, message
                             )
                         )
-                        if show_progress
-                        else None
-                    ),
-                )
+                    )
+                    if show_progress
+                    else None
+                ),
+            )
+        if raw_file is None:
+            raise RuntimeError("FastTelethon did not return an uploaded file.")
         cache = {
             "by_bot": by_bot,
             "size": size,
@@ -207,7 +323,6 @@ class UltroidClient(TelegramClient):
 
         from telethon.tl.types import DocumentAttributeFilename
 
-        from pyUltroid.fns.FastTelethon import download_file
         from pyUltroid.fns import fns
 
         start_time = time.time()
@@ -234,7 +349,7 @@ class UltroidClient(TelegramClient):
                 progress_callback=(
                     (
                         lambda completed, total: self.loop.create_task(
-                            _helper.progress(
+                            fns.progress(
                                 completed, total, event, start_time, message
                             )
                         )
@@ -353,8 +468,8 @@ class BusinessBotsClient(UltroidClient):
 
     async def __call__(self, query, *args, **kwargs):
         from .business import (
-            business_connection_id,
             _BUSINESS_WRAPPABLE_REQUESTS,
+            business_connection_id,
         )
 
         conn_id = business_connection_id.get()

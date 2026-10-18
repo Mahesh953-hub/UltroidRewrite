@@ -3,6 +3,7 @@ from contextvars import ContextVar
 from telethon import utils, events
 from telethon.events import Raw
 from telethon.functions import account, messages
+from telethon.tl.types import PeerChannel, PeerChat, PeerUser
 
 business_connection_id = ContextVar("business_connection_id", default=None)
 
@@ -56,13 +57,26 @@ class BusinessMessageEvent:
         from pyUltroid import ultroid_bot
 
         self.out = self.sender_id == ultroid_bot.uid
-        self.is_private = self.message.is_private
-        self.is_group = self.message.is_group
-        self.is_channel = self.message.is_channel
+        peer_id = self.message.peer_id
+        channel_peer = isinstance(peer_id, PeerChannel)
+        group_peer = isinstance(peer_id, PeerChat) or (
+            channel_peer and not getattr(self.message, "post", False)
+        )
+        self.is_private = bool(
+            getattr(self.message, "is_private", isinstance(peer_id, PeerUser))
+        )
+        self.is_group = bool(getattr(self.message, "is_group", group_peer))
+        self.is_channel = bool(
+            getattr(self.message, "is_channel", channel_peer and not group_peer)
+        )
 
         # Expose standard message properties
         self.id = self.message.id
-        self.reply_to_msg_id = self.message.reply_to_msg_id
+        reply_header = getattr(self.message, "reply_to", None)
+        self.reply_to_msg_id = getattr(self.message, "reply_to_msg_id", None)
+        if self.reply_to_msg_id is None and reply_header is not None:
+            self.reply_to_msg_id = getattr(reply_header, "reply_to_msg_id", None)
+        self.is_reply = bool(self.reply_to_msg_id)
         self.media = self.message.media
         self.entities = self.message.entities
 

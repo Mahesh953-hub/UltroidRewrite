@@ -49,7 +49,9 @@ import re
 import uuid
 
 from telethon import Button
+
 from custom.tg import ikm
+from pyUltroid._core.events import InlineResultBuilder
 
 try:
     from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -274,7 +276,6 @@ def _multilayer_logo(bgpath, text, fontpath, fill="white", stroke_fill="black"):
     base = Image.open(bgpath).convert("RGBA")
     w, h = base.size
     lines = [ln.strip() for ln in text.split("|") if ln.strip()] or [text]
-    n = len(lines)
 
     layers = []
     total_h = 0
@@ -1166,7 +1167,7 @@ if asst is not None:
         if not text:
             return await event.answer(
                 [
-                    await event.builder.article(
+                    await InlineResultBuilder(event).article(
                         title="Add Text", text="Type your text after the query."
                     )
                 ]
@@ -1175,7 +1176,7 @@ if asst is not None:
         if not sess:
             return await event.answer(
                 [
-                    await event.builder.article(
+                    await InlineResultBuilder(event).article(
                         title="Session expired", text="Run `.logo <text>` again."
                     )
                 ]
@@ -1187,7 +1188,7 @@ if asst is not None:
         except Exception as er:
             LOGS.debug(er)
             return await event.answer(
-                [await event.builder.article(title="Failed", text=str(er))]
+                [await InlineResultBuilder(event).article(title="Failed", text=str(er))]
             )
         _cleanup(sess["path"])
         sess["path"] = newpath
@@ -1219,4 +1220,6 @@ if asst is not None:
             if delivered
             else "Reply to the logo with `.logotext <text>`."
         )
-        await event.answer([await event.builder.article(title=title, text=body)])
+        await event.answer(
+            [await InlineResultBuilder(event).article(title=title, text=body)]
+        )

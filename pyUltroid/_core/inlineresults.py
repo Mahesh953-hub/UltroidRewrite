@@ -11,80 +11,16 @@ Full narrative: see docs/HANDBOOK.md (module narratives appendix)."""
 from __future__ import annotations
 
 import hashlib
-from typing import Any, List, Optional, Tuple, Union
 from collections.abc import Iterable, Sequence
-
-from ..startup.logger import LOGS
+from typing import Any
 
 from telethon import utils as _utils
 from telethon.tl import types as _types
 from telethon.tl.custom import InlineBuilder as _InlineBuilder
 
-from .entities import RICH_MD as _RICH_MD
-from .richmsg import LegacyMessage, RichBlocks, legacy_message
-
-try:
-    from . import richmsg as _richmsg
-except Exception:  # pragma: no cover - keep this module standalone-safe
-    _richmsg = None
-
-
-# Capability probing
-_CAPABILITIES = {
-    "article": ("InputBotInlineResult", "InputBotInlineMessageText"),
-    "photo": ("InputBotInlineResultPhoto", "InputBotInlineMessageMediaAuto"),
-    "document": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "game": ("InputBotInlineResultGame", "InputBotInlineMessageGame"),
-    "gif": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "video": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "audio": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "voice": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "sticker": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "file": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "location": (
-        "InputBotInlineResult",
-        "InputGeoPoint",
-        "InputBotInlineMessageMediaGeo",
-    ),
-    "venue": (
-        "InputBotInlineResult",
-        "InputGeoPoint",
-        "InputBotInlineMessageMediaVenue",
-    ),
-    "contact": ("InputBotInlineResult", "InputBotInlineMessageMediaContact"),
-    "article_rich": (),
-    "cached_photo": ("InputBotInlineResultPhoto", "InputBotInlineMessageMediaAuto"),
-    "cached_document": (
-        "InputBotInlineResultDocument",
-        "InputBotInlineMessageMediaAuto",
-    ),
-    "cached_gif": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "cached_video": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "cached_audio": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "cached_voice": ("InputBotInlineResultDocument", "InputBotInlineMessageMediaAuto"),
-    "cached_sticker": (
-        "InputBotInlineResultDocument",
-        "InputBotInlineMessageMediaAuto",
-    ),
-}
-
-_DOCUMENT_KINDS = {"gif", "video", "audio", "voice", "sticker", "file"}
-
-
-def has(kind: str) -> bool:
-    if kind == "article_rich":
-        return True
-    names = _CAPABILITIES.get(kind)
-    if not names:
-        return False
-    return all(getattr(_types, n, None) is not None for n in names)
-
-
-def _require(name: str):
-    cls = getattr(_types, name, None)
-    if cls is None:
-        raise RuntimeError(f"telethon.tl.types.{name} is not available")
-    return cls
+from ..startup.logger import LOGS
+from . import richmsg as _richmsg
+from .richmsg import RichBlocks, RichMarkup, coerce_to_rich_markup
 
 
 def _finalize_id(result, id: str | None):
@@ -116,38 +52,22 @@ class InlineResultError(ValueError):
 
 
 def _blocks_to_html(blocks_or_html: str | Iterable[Any] | None) -> str:
-    """HTML for ``article_rich``'s native ``InputRichMessageHTML`` payload.
-
-    A raw HTML string passes through verbatim (untouched  -  it is assumed
-    already valid). Anything else  -  a :class:`~pyUltroid._core.richmsg.
-    RichBlocks`, a bare string, or a loose iterable of strings/dicts  -  is
-    normalized and rendered via :func:`richmsg.normalize_blocks` +
-    :func:`richmsg.render_blocks_native_html` (media ``file_specs`` are
-    dropped here; ``article_rich`` only builds the ``html=`` field of
-    ``InputRichMessageHTML``, it has no kwarg to attach rich files).
-    """
+    """Render HTML-only blocks, refusing unsupported photo/document references."""
     if isinstance(blocks_or_html, str):
         return blocks_or_html
-    if _richmsg is None:  # pragma: no cover - defensive, richmsg ships in-tree
-        return ""
-    blocks = _richmsg.normalize_blocks(blocks_or_html)
-    html_text, _file_specs = _richmsg.render_blocks_native_html(blocks)
-    return html_text
+    markup = _richmsg.rich_markup_from_blocks(blocks_or_html, format="html")
+    if markup.files:
+        raise ValueError("RichMessage photo/document references are unsupported")
+    return markup.text
 
 
 def _blocks_to_text(blocks_or_html: str | Iterable[Any] | None) -> str:
-    """Plain-text summary for ``article_rich``'s degraded ``article`` fallback.
-
-    A raw HTML string passes through verbatim, same contract as
-    :func:`_blocks_to_html`. Anything else is normalized and rendered via
-    :func:`richmsg.blocks_to_plain_text`.
-    """
+    """Render content as plain text for consumers that explicitly need it."""
+    if isinstance(blocks_or_html, RichMarkup):
+        return _richmsg.blocks_to_plain_text(blocks_or_html) if _richmsg else ""
     if isinstance(blocks_or_html, str):
         return blocks_or_html
-    if _richmsg is None:  # pragma: no cover - defensive, richmsg ships in-tree
-        return ""
-    blocks = _richmsg.normalize_blocks(blocks_or_html)
-    return _richmsg.blocks_to_plain_text(blocks)
+    return _richmsg.blocks_to_plain_text(_richmsg.normalize_blocks(blocks_or_html))
 
 
 # InlineResults
@@ -173,10 +93,6 @@ class InlineResults:
         else:
             self._client = src
             self._builder = _InlineBuilder(src)
-
-    @staticmethod
-    def has(kind: str) -> bool:
-        return has(kind)
 
     # ── message construction, delegated to the fork ───────────────────────
     def _markup(self, buttons):
@@ -237,8 +153,62 @@ class InlineResults:
             raise
 
     # ── pass-throughs to the wrapped InlineBuilder ─────────────────────────
-    async def article(self, **kwargs):
-        return await self._builder.article(**kwargs)
+    async def article(self, *args, **kwargs):
+        """Build a text article only through the native rich-message schema."""
+        if len(args) > 2:
+            raise TypeError("article accepts at most title and description positionally")
+        if args:
+            kwargs.setdefault("title", args[0])
+        if len(args) == 2:
+            kwargs.setdefault("description", args[1])
+        try:
+            title = kwargs.pop("title")
+        except KeyError as exc:
+            raise TypeError("article requires title") from exc
+        if "payload" in kwargs and "text" in kwargs:
+            raise TypeError("article accepts either payload= or text=, not both")
+        payload = kwargs.pop("payload", kwargs.pop("text", ""))
+        parse_mode = kwargs.pop("parse_mode", ())
+        if parse_mode == ():
+            parse_mode = "v2"
+        result_type = kwargs.pop("type", "article")
+        include_media = kwargs.pop("include_media", False)
+        if result_type != "article" or include_media:
+            raise InlineResultError(
+                "media inline results cannot be represented as RichMessage articles"
+            )
+        for unsupported in ("geo", "contact", "game", "period"):
+            if kwargs.pop(unsupported, None) is not None:
+                raise InlineResultError(
+                    f"{unsupported} inline results are not RichMessage articles"
+                )
+        if isinstance(payload, RichMarkup):
+            markup = payload
+        elif isinstance(payload, (RichBlocks, list, tuple)):
+            markup = None
+        else:
+            markup = coerce_to_rich_markup(payload, parse_mode=parse_mode)
+            if markup is None:
+                raise InlineResultError("article text cannot be converted to rich HTML")
+        if markup is not None:
+            payload = markup
+            rich_format = markup.format
+        else:
+            rich_format = "html"
+        link_preview = kwargs.pop("link_preview", True)
+        noautolink = kwargs.pop("noautolink", not bool(link_preview))
+        allowed = {"description", "url", "thumb", "content", "id", "buttons", "rtl", "files"}
+        unexpected = set(kwargs) - allowed
+        if unexpected:
+            names = ", ".join(sorted(unexpected))
+            raise InlineResultError(f"unsupported rich article options: {names}")
+        return await self.article_rich(
+            title,
+            payload,
+            format=rich_format,
+            noautolink=noautolink,
+            **kwargs,
+        )
 
     async def photo(self, file, **kwargs):
         return await self._builder.photo(file, **kwargs)
@@ -328,20 +298,17 @@ class InlineResults:
         buttons=None,
     ):
         """Build a location inline result (``InputBotInlineMessageMediaGeo``)."""
-        geo_cls = _require("InputGeoPoint")
-        msg_cls = _require("InputBotInlineMessageMediaGeo")
-        result_cls = _require("InputBotInlineResult")
-        geo_point = geo_cls(
+        geo_point = _types.InputGeoPoint(
             lat=float(latitude), long=float(longitude), accuracy_radius=accuracy_radius
         )
-        send_message = msg_cls(
+        send_message = _types.InputBotInlineMessageMediaGeo(
             geo_point=geo_point,
             heading=heading,
             period=period,
             proximity_notification_radius=proximity_notification_radius,
             reply_markup=self._markup(buttons),
         )
-        result = result_cls(
+        result = _types.InputBotInlineResult(
             id=id or "",
             type="geo",
             send_message=send_message,
@@ -369,11 +336,8 @@ class InlineResults:
         buttons=None,
     ):
         """Build a venue inline result (``InputBotInlineMessageMediaVenue``)."""
-        geo_cls = _require("InputGeoPoint")
-        msg_cls = _require("InputBotInlineMessageMediaVenue")
-        result_cls = _require("InputBotInlineResult")
-        geo_point = geo_cls(lat=float(latitude), long=float(longitude))
-        send_message = msg_cls(
+        geo_point = _types.InputGeoPoint(lat=float(latitude), long=float(longitude))
+        send_message = _types.InputBotInlineMessageMediaVenue(
             geo_point=geo_point,
             title=title,
             address=address,
@@ -382,7 +346,7 @@ class InlineResults:
             venue_type=venue_type,
             reply_markup=self._markup(buttons),
         )
-        result = result_cls(
+        result = _types.InputBotInlineResult(
             id=id or "",
             type="venue",
             send_message=send_message,
@@ -408,16 +372,14 @@ class InlineResults:
         buttons=None,
     ):
         """Build a contact inline result (``InputBotInlineMessageMediaContact``)."""
-        msg_cls = _require("InputBotInlineMessageMediaContact")
-        result_cls = _require("InputBotInlineResult")
-        send_message = msg_cls(
+        send_message = _types.InputBotInlineMessageMediaContact(
             phone_number=phone_number,
             first_name=first_name,
             last_name=last_name,
             vcard=vcard,
             reply_markup=self._markup(buttons),
         )
-        result = result_cls(
+        result = _types.InputBotInlineResult(
             id=id or "",
             type="contact",
             send_message=send_message,
@@ -428,111 +390,74 @@ class InlineResults:
         )
         return _finalize_id(result, id)
 
-    # ── article_rich
     async def article_rich(
         self,
         title: str,
         payload: Any = None,
         *,
-        engine: str = "rich",
-        format: str = "html",
-        is_premium: bool = False,
-        is_bot: bool = True,
+        format: str | None = None,
+        files: Sequence[Any] | None = None,
         description: str | None = None,
         url: str | None = None,
         id: str | None = None,
+        thumb=None,
+        content=None,
         buttons=None,
         rtl: bool = False,
-        noautolink: bool = False,
-        fallback_parse_mode=None,
+        noautolink: bool | None = None,
     ):
-        """Rich-message inline article via ``InputBotInlineMessageRichMessage``.
-
-        *payload* may be, in order of preference:
-
-        * a raw HTML string - passed through verbatim into
-          ``InputRichMessageHTML`` (see :func:`_blocks_to_html`);
-        * a :class:`~pyUltroid._core.richmsg.RichBlocks` instance or an
-          iterable of block dicts / plain strings - rendered to HTML via
-          the block model;
-        * an already-built rich payload (``InputRichMessageHTML`` /
-          ``InputRichMessageMarkdown``) - wrapped as-is;
-        * a :class:`~pyUltroid._core.richmsg.LegacyMessage` - the plain
-          ``article`` fallback renders ``payload.markup``.
-
-        When ``InputBotInlineMessageRichMessage`` /
-        ``InputRichMessageHTML`` are unavailable in this Telethon build (or
-        *payload* is omitted), this degrades to a plain :meth:`article`
-        rendered with ``parse_mode=`` MarkdownV3 (falling back further to no
-        parsing at all if MarkdownV3 itself is unavailable).
-        """
-        if format not in ("html", "markdown"):
+        """Build a native RichMessage article, preserving files or rejecting them."""
+        if payload is None:
+            raise ValueError("article_rich requires a rich payload")
+        if format not in (None, "html", "markdown"):
             raise ValueError("format must be 'html' or 'markdown'")
-        if engine not in ("auto", "legacy", "rich"):
-            raise ValueError("engine must be 'auto', 'legacy' or 'rich'")
-        legacy = payload if isinstance(payload, LegacyMessage) else None
-        if (
-            legacy is None
-            and payload is not None
-            and engine != "legacy"
-            and has("article_rich")
-        ):
-            if isinstance(payload, (RichBlocks, list, tuple)):
-                payload = _blocks_to_html(payload)
-            if isinstance(payload, str):
-                if format == "markdown":
-                    rich = _require("InputRichMessageMarkdown")(
-                        markdown=payload,
-                        rtl=bool(rtl),
-                        noautolink=bool(noautolink),
-                    )
-                else:
-                    rich = _require("InputRichMessageHTML")(
-                        html=payload,
-                        rtl=bool(rtl),
-                        noautolink=bool(noautolink),
-                    )
-            else:
-                rich = payload
-            msg_cls = _require("InputBotInlineMessageRichMessage")
-            send_message = msg_cls(
-                rich_message=rich,
-                reply_markup=self._markup(buttons),
+        chosen_format = format or (payload.format if isinstance(payload, RichMarkup) else "html")
+        if _richmsg._is_native_rich_message(payload):
+            if files:
+                raise ValueError("files are already part of the supplied InputRichMessage")
+            if format is not None:
+                raise ValueError("format cannot override an already-built InputRichMessage")
+            rich = _richmsg.rich_message(payload)
+        elif isinstance(payload, RichMarkup):
+            if format is not None and format != payload.format:
+                raise ValueError("format must match the RichMarkup format")
+            markup = RichMarkup(
+                payload.text,
+                payload.format,
+                tuple(payload.files) + tuple(files or ()),
             )
-            result = _types.InputBotInlineResult(
-                id=id or "",
-                type="article",
-                send_message=send_message,
-                title=title,
-                description=description,
-                url=url,
-            )
-            return _finalize_id(result, id)
-
-        parse_mode = fallback_parse_mode
-        if parse_mode is None:
-            parse_mode = _RICH_MD if _RICH_MD.available else None
-        if legacy is not None:
-            markup = legacy.markup
-        elif engine == "legacy" and payload is not None:
-            # explicit legacy engine: render through the mdv3 fallback
-            # dialect, exactly like richmsg.legacy_message does
-            markup = legacy_message(payload, format=format).markup
+            rich = _richmsg.rich_message(markup, rtl=rtl, noautolink=noautolink)
         elif isinstance(payload, str):
-            markup = payload
-        elif payload is None:
-            markup = ""
+            markup = RichMarkup(payload, chosen_format, tuple(files or ()))
+            rich = _richmsg.rich_message(markup, rtl=rtl, noautolink=noautolink)
+        elif isinstance(payload, (RichBlocks, list, tuple)):
+            if chosen_format == "html":
+                rich = _richmsg.rich_message_html(
+                    payload, files=files, rtl=rtl, noautolink=noautolink
+                )
+            else:
+                rich = _richmsg.rich_message_markdown(
+                    payload, files=files, rtl=rtl, noautolink=noautolink
+                )
         else:
-            markup = _blocks_to_text(payload)
-        return await self.article(
+            raise TypeError(
+                "payload must be RichMarkup, RichBlocks, markup text, or a native InputRichMessage"
+            )
+        send_message = _types.InputBotInlineMessageRichMessage(
+            rich_message=rich,
+            reply_markup=self._markup(buttons),
+        )
+        result = _types.InputBotInlineResult(
+            id=id or "",
+            type="article",
+            send_message=send_message,
             title=title,
             description=description,
             url=url,
-            id=id,
-            text=markup,
-            parse_mode=parse_mode,
-            buttons=buttons,
+            thumb=thumb,
+            content=content,
         )
+        return _finalize_id(result, id)
 
     async def _cached_document(
         self,
@@ -557,7 +482,7 @@ class InlineResults:
                 f"{type(file).__name__!r} which would require an upload  -  "
                 f"use InlineResults.{kind}() instead"
             ) from e
-        result_cls = _require("InputBotInlineResultDocument")
+        result_cls = _types.InputBotInlineResultDocument
         send_message = await self._message(
             text=text,
             parse_mode=parse_mode,
@@ -612,7 +537,7 @@ class InlineResults:
                 f"reference (e.g. `message.photo`); got {type(file).__name__!r} "
                 "which would require an upload  -  use InlineResults.photo() instead"
             ) from e
-        result_cls = _require("InputBotInlineResultPhoto")
+        result_cls = _types.InputBotInlineResultPhoto
         send_message = await self._message(
             text=text,
             parse_mode=parse_mode,
@@ -628,5 +553,4 @@ class InlineResults:
 
 __all__ = (
     "InlineResults",
-    "has",
 )

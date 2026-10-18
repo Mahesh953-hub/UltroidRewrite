@@ -19,13 +19,13 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from pyUltroid.startup.logger import LOGS
+
 from ._context import (
     BLOCKED_COMMANDS,
-    BLOCKED_PATTERNS,
     BLOCKED_PATHS,
+    BLOCKED_PATTERNS,
     ExecutionContext,
     TrustLevel,
 )
@@ -219,6 +219,9 @@ class SecurityGuard:
         if not ctx.has_cap(Cap.SHELL_EXEC):
             return f"AI agent missing cap: {Cap.SHELL_EXEC}"
 
+        if self._has_output_redirection(command) and not ctx.has_cap(Cap.SHELL_WRITE):
+            return f"AI agent missing cap: {Cap.SHELL_WRITE} for output redirection"
+
         # Network commands need SHELL_NET
         _net_cmds = ("curl", "wget", "nc", "nmap", "ssh", "scp", "rsync")
         if any(command.lstrip().startswith(c) for c in _net_cmds):
@@ -243,6 +246,27 @@ class SecurityGuard:
                 return f"AI agent missing cap: {Cap.SHELL_WRITE}"
 
         return None
+
+    @staticmethod
+    def _has_output_redirection(command: str) -> bool:
+        quote = None
+        escaped = False
+        for char in command:
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\" and quote != "'":
+                escaped = True
+                continue
+            if quote:
+                if char == quote:
+                    quote = None
+                continue
+            if char in ("'", '"'):
+                quote = char
+            elif char == ">":
+                return True
+        return quote is not None or escaped
 
     # ── Deny builder ───────────────────────────────────────────────────────
 
@@ -343,6 +367,7 @@ class SecurityGuard:
     def _get_redis(self):
         try:
             import redis as _redis
+
             from pyUltroid.configs import Var
 
             uri = getattr(Var, "REDIS_URI", None)
@@ -354,4 +379,3 @@ class SecurityGuard:
 
 
 # ── Module singleton ───────────────────────────────────────────────────────
-

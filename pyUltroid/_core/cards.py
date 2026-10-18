@@ -19,15 +19,14 @@ never block the loader.
 
 from __future__ import annotations
 
-import html as _html
 import textwrap
 import time
 import urllib.request
 from collections import namedtuple
+from collections.abc import Sequence
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
-from collections.abc import Sequence
+from typing import Any
 
 from ..startup.logger import LOGS
 
@@ -429,7 +428,7 @@ def build_error_notice(
     """Build the ``(text, entities, parse_mode)`` message accompanying an error card.
 
     ``expandable=True`` (the default) wraps the summary + traceback in a
-    single collapsed/expandable blockquote via :mod:`pyUltroid._core.entities`:
+    single collapsed/expandable blockquote via :mod:`custom.entities`:
     Telegram renders a collapsed blockquote showing only its first couple of
     lines (the *summary*) until tapped, at which point the rest (the *full
     traceback*, up to ``max_lines`` lines) becomes visible  -  matching the
@@ -441,10 +440,7 @@ def build_error_notice(
     for destinations that don't render expandable blockquotes (e.g. plain
     log files).
 
-    Falls back to the existing ``<blockquote expandable>`` HTML convention
-    (``pyUltroid._core.entities`` unavailable, or the running Telethon build
-    lacks ``MessageEntityBlockquote``) so callers always get a sensible
-    ``text`` either way. Never raises.
+    Uses the pinned Telethon blockquote entity directly. Never raises.
     """
     try:
         header = f"⚠️ Plugin Load Error  -  {plugin_name}"
@@ -455,26 +451,12 @@ def build_error_notice(
         quote_text = f"{summary}\n\n{tb_text}" if tb_text else summary
 
         if expandable:
-            try:
-                from . import entities as _entities
+            from custom.entities import combine
+            from custom.entities import expandable as expandable_entity
 
-                if _entities.has("blockquote"):
-                    quote_body, quote_entities = _entities.expandable(quote_text)
-                    text, ents = _entities.combine(
-                        (f"{header}\n\n", []), (quote_body, quote_entities)
-                    )
-                    return ErrorNotice(text=text, entities=ents, parse_mode=None)
-            except Exception as exc:
-                LOGS.debug(
-                    "[cards] entity-based error notice failed for %r: %s",
-                    plugin_name,
-                    exc,
-                )
-
-            # Fallback: the plain HTML "<blockquote expandable>" convention
-            # already used by custom/fmt.py::fmtmsg.
-            body = f"<b>{_html.escape(header)}</b>\n\n<blockquote expandable>{_html.escape(quote_text)}</blockquote>"
-            return ErrorNotice(text=body, entities=[], parse_mode="html")
+            quote_body, quote_entities = expandable_entity(quote_text)
+            text, ents = combine((f"{header}\n\n", []), (quote_body, quote_entities))
+            return ErrorNotice(text=text, entities=ents, parse_mode=None)
 
         # expandable=False  -  plain block, no blockquote entity at all.
         text = f"{header}\n\n{quote_text}"

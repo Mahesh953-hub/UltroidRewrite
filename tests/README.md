@@ -100,7 +100,7 @@ although Pillow is installed — loader depspec bug A5, owned by W0-B
 originally asserted `detect_runtime_capabilities() == RuntimeCapabilities()`
 (all-`False`). That is only true when **Telethon is not installed** — the
 exploration ran it in a bare env, where it passed. In the full venv the
-Telethon fork (1.44.0) is importable, detection finds the managed-bot
+  Telethon fork (1.45.0, layer 229) is importable, detection finds the managed-bot
 surfaces, and the assertion failed (the old 30-pass/1-fail baseline).
 
 The test is now environment-aware in both directions:

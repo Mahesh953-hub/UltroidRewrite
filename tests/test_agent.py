@@ -292,16 +292,20 @@ def fake_aiohttp(monkeypatch):
 
 def test_registry_lists_all_supported_providers(agent_modules):
     p = agent_modules.providers
-    status = p.ProviderRegistry().provider_health()
+    registry = p.ProviderRegistry()
+    status = registry.provider_health()
     assert {
         "ollama",
         "openai_compat",
         "groq",
         "gemini",
+        "apimix",
         "openrouter",
         "openai",
         "anthropic",
     } <= set(status)
+    names = [provider.name for provider in registry._all]
+    assert names.index("apimix") < names.index("openrouter")
     # Import-safety: with no keys configured only Ollama reports configured
     # (it self-checks reachability later), and nothing raised on import.
     assert status["ollama"] is True
@@ -331,13 +335,14 @@ def test_unconfigured_providers_return_error_not_raise(agent_modules):
 
 def test_ollama_complete_ok(agent_modules, fake_aiohttp):
     p = agent_modules.providers
+    ollama = p.ProviderRegistry().provider_by_name("ollama")
     fake_aiohttp.chat_data = {
         "message": {"content": "local says hi"},
         "prompt_eval_count": 3,
         "eval_count": 5,
     }
     resp = asyncio.run(
-        p.ollama.complete(
+        ollama.complete(
             [p.AIMessage(role="user", content="hello")],
             system="be brief",
         )
@@ -356,7 +361,8 @@ def test_ollama_complete_ok(agent_modules, fake_aiohttp):
 def test_ollama_not_running(agent_modules, fake_aiohttp):
     fake_aiohttp.tags_status = 500
     p = agent_modules.providers
-    resp = asyncio.run(p.ollama.complete([p.AIMessage(role="user", content="hi")]))
+    ollama = p.ProviderRegistry().provider_by_name("ollama")
+    resp = asyncio.run(ollama.complete([p.AIMessage(role="user", content="hi")]))
     assert not resp.ok
     assert resp.error == "Ollama not running"
 
@@ -367,10 +373,11 @@ def test_ollama_stream_ok(agent_modules, fake_aiohttp):
         json.dumps({"message": {"content": "y"}, "done": True}).encode(),
     )
     p = agent_modules.providers
+    ollama = p.ProviderRegistry().provider_by_name("ollama")
 
     async def collect():
         return [
-            c async for c in p.ollama.stream([p.AIMessage(role="user", content="hi")])
+            c async for c in ollama.stream([p.AIMessage(role="user", content="hi")])
         ]
 
     assert asyncio.run(collect()) == ["he", "y"]
@@ -860,15 +867,58 @@ def test_update_check_apply_allowed_with_explicit_grant(agent_modules, monkeypat
     updater_mod = types.ModuleType("pyUltroid.updater")
 
     class FakeEngine:
-        async def check(self):
-            return None  # "could not fetch upstream"
+        def __init__(self):
+            self.applied = []
 
-    updater_mod.updater = FakeEngine()
+        async def check(self):
+            return SimpleNamespace(
+                has_changes=True,
+                commit_count=1,
+                needs_restart=False,
+                impact_summary=lambda: "plugins changed",
+                changelog_text=lambda limit: "one commit",
+            )
+
+        async def apply(self, diff):
+            self.applied.append(diff)
+            return SimpleNamespace(summary=lambda: "update complete")
+
+    engine = FakeEngine()
+    updater_mod.up = engine
     monkeypatch.setitem(sys.modules, "pyUltroid.updater", updater_mod)
 
     ex = tools.make_executor(caps=set(tools.DEFAULT_AGENT_CAPS) | {Cap.UPDATE_APPLY})
     result = asyncio.run(ex.execute("update_check", {"apply": True}))
-    assert result.get("error") == "Could not fetch upstream"  # dispatched
+    assert result["has_changes"] is True
+    assert result["applied"] == "update complete"
+    assert len(engine.applied) == 1
+
+
+def test_get_bot_status_uses_unified_updater_facade(agent_modules, monkeypatch):
+    tools = agent_modules.tools_mod
+    updater_mod = types.ModuleType("pyUltroid.updater")
+    updater_mod.up = SimpleNamespace(
+        git=SimpleNamespace(
+            current_sha=lambda: "abc1234",
+            current_branch=lambda: "main",
+        )
+    )
+    tracer_mod = types.ModuleType("pyUltroid.tracer")
+    tracer_mod.tr = SimpleNamespace(
+        index=SimpleNamespace(stats=lambda: {"plugins": 12, "handlers": 34})
+    )
+    monkeypatch.setitem(sys.modules, "pyUltroid.updater", updater_mod)
+    monkeypatch.setitem(sys.modules, "pyUltroid.tracer", tracer_mod)
+
+    result = asyncio.run(tools.make_executor()._tool_get_bot_status())
+
+    assert result == {
+        "version": "abc1234",
+        "branch": "main",
+        "plugins": 12,
+        "handlers": 34,
+        "uptime_info": "available via .uptime command",
+    }
 
 
 def test_shell_execute_denied_without_shell_exec(agent_modules):
@@ -940,6 +990,99 @@ def test_shell_execute_strips_privileged_caps_even_if_granted(
     assert Cap.UPDATE_READ not in captured["ctx"].caps
 
 
+def test_send_text_file_uses_in_memory_payload_and_current_chat(
+    agent_modules, monkeypatch
+):
+    tools = agent_modules.tools_mod
+    captured = {}
+    bridge = types.ModuleType("pyUltroid.agent._tgbridge")
+
+    async def send_file_via_master(file_obj, entity_ref, *, caption=None):
+        captured.update(
+            file=file_obj,
+            chat=entity_ref,
+            caption=caption,
+        )
+        return {"ok": True, "message_id": 123}
+
+    bridge.send_file_via_master = send_file_via_master
+    monkeypatch.setitem(sys.modules, "pyUltroid.agent._tgbridge", bridge)
+    executor = tools.make_executor(
+        chat_id=42, caps={tools.Cap.TG_SEND_FILE}
+    )
+    result = asyncio.run(
+        executor.execute(
+            "send_text_file",
+            {
+                "filename": "poem.txt",
+                "content": "A short poem.\n",
+                "caption": "Your poem",
+            },
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["filename"] == "poem.txt"
+    assert result["message_id"] == 123
+    assert captured["chat"] == 42
+    assert captured["file"].name == "poem.txt"
+    assert captured["file"].getvalue() == b"A short poem.\n"
+    assert captured["caption"] == "Your poem"
+
+    schema = next(
+        item["function"]
+        for item in tools.TOOL_SCHEMAS
+        if item["function"]["name"] == "send_text_file"
+    )
+    assert set(schema["parameters"]["properties"]) == {
+        "filename",
+        "content",
+        "caption",
+    }
+
+
+def test_send_text_file_is_permission_gated_and_rejects_paths(
+    agent_modules, monkeypatch
+):
+    tools = agent_modules.tools_mod
+    denied = asyncio.run(
+        tools.make_executor(chat_id=42, caps=set()).execute(
+            "send_text_file", {"filename": "poem.txt", "content": "text"}
+        )
+    )
+    assert denied["denied"] is True
+    assert tools.Cap.TG_SEND_FILE in denied["missing_caps"]
+
+    bridge = types.ModuleType("pyUltroid.agent._tgbridge")
+    bridge.send_file_via_master = lambda *args, **kwargs: pytest.fail(
+        "invalid file request must not reach the Telegram bridge"
+    )
+    monkeypatch.setitem(sys.modules, "pyUltroid.agent._tgbridge", bridge)
+    executor = tools.make_executor(
+        chat_id=42, caps={tools.Cap.TG_SEND_FILE}
+    )
+    invalid = asyncio.run(
+        executor.execute(
+            "send_text_file",
+            {"filename": "../.env", "content": "not a file read"},
+        )
+    )
+    oversized = asyncio.run(
+        executor.execute(
+            "send_text_file",
+            {"filename": "poem.txt", "content": "x" * (256 * 1024 + 1)},
+        )
+    )
+    no_chat = asyncio.run(
+        tools.make_executor(chat_id=0, caps={tools.Cap.TG_SEND_FILE}).execute(
+            "send_text_file", {"filename": "poem.txt", "content": "text"}
+        )
+    )
+    assert "without a path" in invalid["error"]
+    assert "256 KiB" in oversized["error"]
+    assert "no current chat" in no_chat["error"]
+
+
 # ── W2-C.5 — lifecycle ───────────────────────────────────────────────────────
 
 
@@ -981,7 +1124,7 @@ def test_lifecycle_registers_idempotently_and_hooks_run(agent_modules):
 def test_lifecycle_start_survives_ollama_down(agent_modules, fake_aiohttp):
     lc = agent_modules.lifecycle
     fake_aiohttp.tags_status = 500
-    plugin = lc.engine_lifecycle
+    plugin = lc.AgentLifecycle()
     asyncio.run(plugin.lifecycle_start(None))  # must not raise
     assert plugin.started is True
     asyncio.run(plugin.lifecycle_stop(None))
@@ -1389,3 +1532,56 @@ def test_tool_pipeline_empty_run(agent_modules):
     tools = agent_modules.tools_mod
     pipe = tools.ToolPipeline(tools.make_executor())
     assert asyncio.run(pipe.run()) == []
+
+
+
+def test_openrouter_retries_unavailable_model_without_rewriting_config(
+    agent_modules, monkeypatch
+):
+    p = agent_modules.providers
+    configured_model = "dots-studio/dots-3-note-preview"
+    agent_modules.root.udB = FakeUdB(
+        {
+            "AGENT_CLOUD_OPENROUTER_KEY": "unit-test-key",
+            "AGENT_CLOUD_OPENROUTER_MODEL": configured_model,
+        }
+    )
+    calls = []
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise RuntimeError(
+                    "Error code: 404 - {'error': {'message': "
+                    "'No endpoints found for dots-studio/dots-3-note-preview.'}}"
+                )
+            message = SimpleNamespace(content="fallback answer", tool_calls=None)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=message)],
+                usage=SimpleNamespace(prompt_tokens=4, completion_tokens=3),
+            )
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    fake_openai = types.ModuleType("openai")
+    fake_openai.AsyncOpenAI = FakeAsyncOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    provider = p.ProviderRegistry().provider_by_name("openrouter")
+    response = asyncio.run(
+        provider.complete([p.AIMessage(role="user", content="hey")])
+    )
+
+    assert response.ok
+    assert response.content == "fallback answer"
+    assert response.model == provider.fallback_model
+    assert [call["model"] for call in calls] == [
+        configured_model,
+        provider.fallback_model,
+    ]
+    assert agent_modules.root.udB.get_key("AGENT_CLOUD_OPENROUTER_MODEL") == configured_model
+    assert provider._model_unavailable("No endpoints found for model")
+    assert not provider._model_unavailable("401 invalid API key")

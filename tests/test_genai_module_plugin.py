@@ -9,13 +9,11 @@ loads the plugin against a stubbed root and a stubbed ``plugins`` package.
 from __future__ import annotations
 
 import asyncio
-import collections
 import logging
 import sys
 import types
 
 import pytest
-
 from conftest import ROOT
 
 
@@ -35,6 +33,13 @@ class FakeClient:
 class FakeUdB:
     def get_key(self, key):
         return None
+
+
+def _builder_pattern(builder):
+    """Return the regex text from Telethon's compiled pattern matcher."""
+    matcher = getattr(builder, "pattern", None)
+    compiled = getattr(matcher, "__self__", matcher)
+    return getattr(compiled, "pattern", compiled)
 
 
 def _fake_telethon():
@@ -146,10 +151,10 @@ def genai_module(module_isolation):
             # loader does right after a successful plugin import.
             registry = layer.registry.ModuleRegistry()
             report = registry.adopt(mod, clients=[plugins.ultroid_bot])
-            assert report == {
-                "GeminiModule": {"handlers": 2}
-            }, f"driver report mismatch: {report}"
-            plugin = registry.get("GeminiModule")
+            assert report == {"GenAIModule": {"handlers": 2}}, (
+                f"driver report mismatch: {report}"
+            )
+            plugin = registry.get("GenAIModule")
             assert plugin is not None, "adopt must register the module"
             yield types.SimpleNamespace(
                 mod=mod, layer=layer, registry=registry, plugin=plugin
@@ -170,7 +175,9 @@ def genai_module(module_isolation):
 
 
 def test_plugin_is_a_module_subclass(genai_module):
-    assert issubclass(genai_module.mod.GeminiModule, genai_module.layer.module.BoundModule)
+    assert issubclass(
+        genai_module.mod.GeminiModule, genai_module.layer.module.BoundModule
+    )
     assert issubclass(
         genai_module.mod.GeminiModule, genai_module.layer.module.ModuleMixin
     )
@@ -182,12 +189,16 @@ def test_handlers_are_discovered_not_declared_by_hand(genai_module):
     assert cls.handler_names() == ("on_message_out", "on_cleared")
     priorities = [tag.priority for _name, tag in cls.handlers]
     assert priorities == [1, 2]
-    assert cls.handler_events() == (genai_module.mod.TRIGGER.pattern, genai_module.mod.CLEAR.pattern)
+    assert cls.handler_events() == ("NewMessage",)
+    assert [_builder_pattern(tag.builder) for _name, tag in cls.handlers] == [
+        genai_module.mod.TRIGGER.pattern,
+        genai_module.mod.CLEAR.pattern,
+    ]
 
 
 def test_module_declares_its_metadata(genai_module):
     described = genai_module.mod.GeminiModule.describe()
-    assert described["name"] == "Google Gemini (Module)"
+    assert described["name"] == "GenAI (Module)"
     assert "!?" in described["cmds"]
     assert described["desc"]["infix"] == "!?"
 
@@ -202,7 +213,6 @@ def _client(mod):
     return plugins.ultroid_bot
 
 
-
 def test_bind_attaches_both_handlers_to_the_client(genai_module):
     mod, registry, plugin = genai_module.mod, genai_module.registry, genai_module.plugin
     registry.unbind(plugin)
@@ -211,7 +221,12 @@ def test_bind_attaches_both_handlers_to_the_client(genai_module):
     assert registry.bind(plugin, [client]) == 2, "bind returns the handler count"
     assert len(registry.listeners) == 2
     assert len(client.handlers) == 2
-    assert [li.event for li in registry.listeners] == [
+    assert [li.event for li in registry.listeners] == ["NewMessage", "NewMessage"]
+    assert [_builder_pattern(li.builder) for li in registry.listeners] == [
+        genai_module.mod.TRIGGER.pattern,
+        genai_module.mod.CLEAR.pattern,
+    ]
+    assert [_builder_pattern(builder) for _callback, builder in client.handlers] == [
         genai_module.mod.TRIGGER.pattern,
         genai_module.mod.CLEAR.pattern,
     ]
@@ -237,203 +252,30 @@ def test_binding_fans_out_across_clients(genai_module):
     registry.bind(plugin, [first])
 
 
-# ── lifecycle ─────────────────────────────────────────────────────────
+# Runtime-specific checks use mocks only; no provider or Telegram connection.
 
-
-def test_ready_runs_the_lifecycle_once(genai_module):
+def test_module_runtime_request_and_shared_history_clear(genai_module, monkeypatch):
     plugin = genai_module.plugin
-    calls = []
-
-    async def starting():
-        calls.append("starting")
-
-    plugin.on_starting = starting
-    plugin._started = False
-    plugin.models_loaded = False
-    plugin.api_key = None
-    asyncio.run(plugin.ready())
-    assert plugin.started is True
-    asyncio.run(plugin.ready())
-    assert calls == ["starting"], "lifecycle must be latched"
-
-
-def test_on_stopping_drops_the_history(genai_module):
-    plugin = genai_module.plugin
-    plugin.history.append({"role": "user", "parts": []})
-    asyncio.run(plugin.on_stopping())
-    assert len(plugin.history) == 0
-    assert plugin.http is None
-
-
-# ── behaviour ─────────────────────────────────────────────────────────
-
-
-def test_history_is_bounded(genai_module):
-    plugin = genai_module.plugin
-    assert isinstance(plugin.history, collections.deque)
-    assert plugin.history.maxlen == 64
-
-
-def test_model_rotation_on_transport_failure(genai_module):
-    plugin = genai_module.plugin
-    plugin.history.append({"role": "user", "parts": [{"text": "q"}]})
-    plugin.models = collections.deque(["models/a", "models/b", "models/c"])
-
-    class Boom:
-        def __aenter__(self):
-            raise RuntimeError("network down")
-
-        async def __aexit__(self, *a):
-            return False
-
-    tried = []
-
-    class Recording:
-        def __init__(self, model):
-            self.model = model
-
-        async def __aenter__(self):
-            tried.append(self.model)
-            raise RuntimeError("network down")
-
-        async def __aexit__(self, *a):
-            return False
-
-    plugin._session = lambda: Recording(plugin.models[0])
-    result = asyncio.run(plugin.ask())
-
-    # every model is attempted exactly once before giving up
-    assert tried == ["models/a", "models/b", "models/c"], tried
-    assert result == "**Error**:\n  `All models failed`", (
-        "exhausted rotation reports honestly, not the old 'Rate Limited' lie"
-    )
-
-
-def test_empty_response_pops_the_history(genai_module):
-    plugin = genai_module.plugin
-    turn = {"role": "user", "parts": [{"text": "q"}]}
-    plugin.history.append(turn)
-
-    class Resp:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        def raise_for_status(self):
-            pass
-
-        async def json(self):
-            return {"candidates": []}
-
-    class Session:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        def post(self, *a, **k):
-            return Resp()
-
-    plugin._session = lambda: Session()
-    result = asyncio.run(plugin.ask())
-    assert result == "**Error**:\n  `Empty Response`"
-    assert turn not in plugin.history, "the empty exchange must not be kept"
-    assert result == "**Error**:\n  `Empty Response`"
-
-
-def test_successful_generation_appends_the_model_turn(genai_module):
-    plugin = genai_module.plugin
-    plugin.history.append({"role": "user", "parts": [{"text": "q"}]})
-
-    class Resp:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        def raise_for_status(self):
-            pass
-
-        async def json(self):
-            return {"candidates": [{"content": {"parts": [{"text": "hello"}]}}]}
-
-    class Session:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        def post(self, *a, **k):
-            return Resp()
-
-    plugin._session = lambda: Session()
-    assert asyncio.run(plugin.ask()) == "hello"
-    assert plugin.history[-1] == {"role": "model", "parts": [{"text": "hello"}]}
-
-
-def test_first_text_is_defensive(genai_module):
-    first_text = genai_module.mod.first_text
-    assert first_text({}) is None
-    assert first_text({"candidates": []}) is None
-    assert first_text({"candidates": [{"content": {}}]}) is None
-    assert first_text({"candidates": [{"content": {"parts": []}}]}) is None
-    assert first_text({"candidates": [{"content": {"parts": [{}]}}]}) is None
-    assert first_text({"candidates": [{"content": {"parts": [{"text": "x"}]}}]}) == "x"
-    assert first_text(None) is None
-
-
-def test_trigger_pattern(genai_module):
-    trigger = genai_module.mod.TRIGGER
-    assert trigger.match("hello !?").group(1) == "hello"
-    assert trigger.match("!?").group(1) is None
-    assert trigger.match("hello !? -i").group(1) == "hello"
-    assert trigger.match("hello") is None
-
-
-def test_media_size_and_mime_guards(genai_module):
-    plugin = genai_module.plugin
-
-    class Reply:
-        sticker = None
-        client = None
-
-        def __init__(self, size, mime):
-            self.file = types.SimpleNamespace(size=size, mime_type=mime)
-
-    too_big = Reply(genai_module.mod.MAX_MEDIA_SIZE + 1, "image/png")
-    assert asyncio.run(plugin.media_part(too_big)) == "genai_media_too_big"
-
-    bad_mime = Reply(10, "application/zip")
-    assert asyncio.run(plugin.media_part(bad_mime)) == "genai_media_bad_mime"
-
-    class NoMedia:
-        sticker = None
-        client = None
-        file = None
-
-    assert asyncio.run(plugin.media_part(NoMedia())) is None
-
-
-def test_run_without_a_key_answers_immediately(genai_module):
-    plugin = genai_module.plugin
-    plugin.api_key = None
+    import plugins.genai_module as module
     seen = []
-
-    async def eod(event, text=None, **kwargs):
-        seen.append(text)
-        return None
-
-    plugin.eod = eod
-    asyncio.run(plugin.run(types.SimpleNamespace(raw_text="hi !?")))
-    assert seen and "Gemini key" in seen[0]
-
-
-def test_registry_status_reports_the_module(genai_module):
-    status = genai_module.registry.status()
-    assert "GeminiModule" in status["modules"]
-    assert status["modules"]["GeminiModule"]["name"] == "Google Gemini (Module)"
+    class Response:
+        content = "ok"
+        def __str__(self): return self.content
+    class Runtime:
+        async def runtime_run(self, request): seen.append(request); return Response()
+        def clear_history(self, key): seen.append(key)
+    monkeypatch.setattr(module, "agent", lambda: Runtime())
+    class Message:
+        async def edit(self, *args, **kwargs): pass
+    class Event:
+        raw_text = "hello !?"
+        chat_id = 5; sender_id = 9; is_private = True; client = None
+        async def reply(self, *args): return Message()
+        async def get_reply_message(self): return None
+    asyncio.run(plugin.on_message_out(Event()))
+    assert seen[0].prompt == "hello"
+    assert seen[0].chat_id == "genai:5:9"
+    async def fake_respond(event, text): seen.append("genai:5:9")
+    monkeypatch.setattr(plugin, "respond", fake_respond)
+    asyncio.run(plugin.on_cleared(Event()))
+    assert seen[1] == "genai:5:9"

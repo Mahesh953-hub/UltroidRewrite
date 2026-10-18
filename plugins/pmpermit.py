@@ -58,6 +58,7 @@ from telethon.tl.functions.contacts import (
 from telethon.tl.functions.messages import ReportSpamRequest
 from telethon.utils import get_display_name, resolve_bot_file_id
 from pyUltroid.fns import fns
+from pyUltroid._core.events import InlineResultBuilder
 
 from pyUltroid.dB.base import KeyManager
 
@@ -164,7 +165,7 @@ if udB.get_key("PMLOG"):
             return
         try:
             await event.forward_to(udB.get_key("PMLOGGROUP") or LOG_CHANNEL)
-        except telethon.errors.rpcerrorlist.MessageIdInvalidError:
+        except MessageIdInvalidError:
             try:
                 await event.client.send_message(
                     udB.get_key("PMLOGGROUP") or LOG_CHANNEL,
@@ -884,8 +885,17 @@ async def in_pm_ans(event):
     if not res:
         if include_media:
             cont = types.InputWebDocument(PMPIC, 0, mime_type, [])
-        res = [
-            event.builder.article(
+        if _type == "article" and not include_media:
+            result = await InlineResultBuilder(event).article(
+                title="Inline PMPermit.",
+                text=msg_,
+                description="@TeamUltroid",
+                buttons=buttons,
+                thumb=cont,
+                content=cont,
+            )
+        else:
+            result = await event.builder.article(
                 title="Inline PMPermit.",
                 type=_type,
                 text=msg_,
@@ -895,7 +905,7 @@ async def in_pm_ans(event):
                 thumb=cont,
                 content=cont,
             )
-        ]
+        res = [result]
     await event.answer(res, switch_pm="• Ultroid •", switch_pm_param="start")
 
 

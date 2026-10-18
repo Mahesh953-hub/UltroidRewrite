@@ -187,7 +187,7 @@ class ButtonKit:
         key = str(name).lower()
         if factory is None:
 
-            def _decorator(self, fn):
+            def _decorator(fn):
                 self._registry[key] = fn
                 return fn
 
@@ -207,11 +207,16 @@ class ButtonKit:
         icon = btn_tuple[4] if len(btn_tuple) > 4 else None
         style, icon = self._normalize_style(style), self._normalize_icon(icon)
         cls = getattr(_types, "KeyboardButtonCopy", None)
-        if cls is None:
-            return Button.inline(
-                text, data=copy_text.encode()[:64], style=style, icon=icon
+        style_obj = Button._get_style(style, icon)
+        if cls is not None:
+            return cls(text=text, copy_text=copy_text, style=style_obj)
+        inline_cls = getattr(_types, "KeyboardInlineButton", None)
+        copy_type_cls = getattr(_types, "InlineButtonTypeCopy", None)
+        if inline_cls is not None and copy_type_cls is not None:
+            return inline_cls(
+                text=text, type=copy_type_cls(copy_text=copy_text), style=style_obj
             )
-        return cls(text=text, copy_text=copy_text, style=Button._get_style(style, icon))
+        return Button.inline(text, data=copy_text.encode()[:64], style=style, icon=icon)
 
     def _build_toggle_button(self, text, val, btn_tuple):
         """Built-in ``"toggle"`` registration: an on/off inline callback button.
@@ -264,7 +269,7 @@ class ButtonKit:
             ) from None
         peer_cls = getattr(_types, cls_name, None)
         button_cls = getattr(_types, "KeyboardButtonRequestPeer", None)
-        if peer_cls is None or button_cls is None:
+        if peer_cls is None:
             raise NotImplementedError(
                 "This Telethon build does not provide the KeyboardButtonRequestPeer TL types"
             )
@@ -275,11 +280,28 @@ class ButtonKit:
             if (style is not None or icon is not None)
             else None
         )
-        return button_cls(
+        peer_type = peer_cls(**peer_kwargs)
+        if button_cls is not None:
+            return button_cls(
+                text=text,
+                button_id=button_id,
+                peer_type=peer_type,
+                max_quantity=max_quantity,
+                style=style_obj,
+            )
+        keyboard_cls = getattr(_types, "KeyboardButton", None)
+        request_type_cls = getattr(_types, "ButtonTypeRequestPeer", None)
+        if keyboard_cls is None or request_type_cls is None:
+            raise NotImplementedError(
+                "This Telethon build does not provide request-peer keyboard types"
+            )
+        return keyboard_cls(
             text=text,
-            button_id=button_id,
-            peer_type=peer_cls(**peer_kwargs),
-            max_quantity=max_quantity,
+            type=request_type_cls(
+                button_id=button_id,
+                peer_type=peer_type,
+                max_quantity=max_quantity,
+            ),
             style=style_obj,
         )
 
@@ -305,6 +327,18 @@ class ButtonKit:
 
         cls = _SimpleWebViewButtonCls if simple else _WebViewButtonCls
         if cls is not None:
+            if cls is getattr(_types, "KeyboardInlineButton", None):
+                view_type = getattr(_types, "InlineButtonTypeWebView", None)
+                if view_type is not None:
+                    return cls(
+                        text=text, type=view_type(url=url or ""), style=style_obj
+                    )
+            if cls is getattr(_types, "KeyboardButton", None):
+                view_type = getattr(_types, "ButtonTypeSimpleWebView", None)
+                if view_type is not None:
+                    return cls(
+                        text=text, type=view_type(url=url or ""), style=style_obj
+                    )
             return cls(text=text, url=url or "", style=style_obj)
 
         if url:
@@ -563,11 +597,14 @@ class ButtonKit:
                     text, icon_val = self._resolve_button_icon(
                         text, icon_elem, auto=auto_icon, data=bt_type, type_hint=None
                     )
+                    style = self._normalize_style(val)
+                    if val is None and str(text).strip().casefold() == "back":
+                        style = "primary"
                     current_row.append(
                         Button.inline(
                             text,
                             data=bt_type,
-                            style=self._normalize_style(val),
+                            style=style,
                             icon=icon_val,
                         )
                     )
@@ -893,8 +930,10 @@ import struct
 import unicodedata
 
 from telethon import Button
-from telethon.tl import TLObject, functions as _functions, types as _types
-from telethon.utils import resolve_inline_message_id, get_peer_id
+from telethon.tl import TLObject
+from telethon.tl import functions as _functions
+from telethon.tl import types as _types
+from telethon.utils import get_peer_id, resolve_inline_message_id
 
 from .icons import document_id_for
 
@@ -1015,8 +1054,12 @@ _REQUEST_PEER_TYPES = {
 }
 
 
-_WebViewButtonCls = getattr(_types, "KeyboardButtonWebView", None)
-_SimpleWebViewButtonCls = getattr(_types, "KeyboardButtonSimpleWebView", None)
+_WebViewButtonCls = getattr(_types, "KeyboardButtonWebView", None) or getattr(
+    _types, "KeyboardInlineButton", None
+)
+_SimpleWebViewButtonCls = getattr(_types, "KeyboardButtonSimpleWebView", None) or getattr(
+    _types, "KeyboardButton", None
+)
 _WebViewDataSentCls = getattr(_types, "MessageActionWebViewDataSent", None)
 _WebViewDataSentMeCls = getattr(_types, "MessageActionWebViewDataSentMe", None)
 _WebViewResultSentCls = getattr(_types, "UpdateWebViewResultSent", None)

@@ -10,6 +10,7 @@ from . import get_help
 __doc__ = get_help("help_bot")
 
 import asyncio
+import html
 import os
 import sys
 import time
@@ -17,21 +18,8 @@ from platform import python_version as pyver
 from random import choice
 
 from telethon import __version__
-from telethon.errors.rpcerrorlist import (
-    BotMethodInvalidError,
-    ChatSendMediaForbiddenError,
-)
-from telethon.tl.types import (
-    InputMessagesFilterVideo,
-    RichButtonStyle,
-    RichMessage,
-    InputRichMessage,
-    InputRichMessageHTML,
-    InputRichMessageMarkdown,
-    InputRichFilePhoto,
-)
-
-from pyUltroid.version import __version__ as UltVer
+from telethon.errors.rpcerrorlist import BotMethodInvalidError
+from telethon.tl.types import InputDocument
 
 from . import HOSTED_ON, LOGS
 
@@ -42,15 +30,23 @@ except ImportError:
     Repo = None
 
 from telethon.utils import resolve_bot_file_id
-from pyUltroid.fns import fns
-from pyUltroid._core.notices import NoticeEdit, ParseMode
+
 from custom.tg import ikm
+from pyUltroid._core.events import InlineResultBuilder
+from pyUltroid._core.notices import NoticeEdit, ParseMode
+from pyUltroid._core.richmsg import (
+    RichFile,
+    RichMarkup,
+    coerce_to_rich_markup,
+    edit_rich,
+)
+from pyUltroid.fns import fns
+
 from . import (
     ATRA_COL,
+    HELP,
     LOGS,
-    OWNER_NAME,
     ULTROID_IMAGES,
-    Button,
     Telegraph,
     Var,
     asst,
@@ -69,7 +65,6 @@ from . import (
 )
 
 
-
 def ULTPIC():
     return inline_pic() or choice(ULTROID_IMAGES)
 
@@ -85,19 +80,52 @@ buttons = ikm(
 
 # Will move to strings
 alive_txt = """
-The Ultroid Userbot
+Ultroid Userbot
 
   ◍ Version - {}
-  ◍ Py-Ultroid - {}
   ◍ Telethon - {}
+  ◍ Plugins - {}
+  ◍ Addons - {}
 """
 
-in_alive = "{}\n\n🌀 <b>Ultroid Version -><b> <code>{}</code>\n🌀 <b>PyUltroid -></b> <code>{}</code>\n🌀 <b>Python -></b> <code>{}</code>\n🌀 <b>Uptime -></b> <code>{}</code>\n🌀 <b>Branch -></b>[ {} ]\n\n• <b>Join @TeamUltroid</b>"
+in_alive = (
+    "{}\n\n"
+    "🌀 <b>Ultroid Version -></b> <code>{}</code>\n"
+    "🌀 <b>Python -></b> <code>{}</code>\n"
+    "🌀 <b>Uptime -></b> <code>{}</code>\n"
+    "🌀 <b>Branch -></b>[ {} ]\n\n"
+    "• <b>Join @TeamUltroid</b>"
+)
+
+
+def _telethon_build_label():
+    """Return the installed Telethon version with its pinned commit and TL layer."""
+    import json
+    from importlib.metadata import distribution
+
+    from telethon.tl import alltlobjects
+
+    commit = "unknown"
+    try:
+        source = distribution("Telethon").read_text("direct_url.json")
+        metadata = json.loads(source or "{}")
+        commit = str(metadata.get("vcs_info", {}).get("commit_id") or "unknown")
+    except Exception:
+        pass
+    layer = getattr(alltlobjects, "LAYER", "unknown")
+    return f"{__version__} [#{commit[:7]}@{layer}]"
+
+
+def _alive_plugin_counts():
+    return len(HELP.get("Official") or {}), len(HELP.get("Addons") or {})
 
 
 @callback("alive")
 async def alive(event):
-    text = alive_txt.format(ultroid_version, UltVer, __version__)
+    plugin_count, addon_count = _alive_plugin_counts()
+    text = alive_txt.format(
+        ultroid_version, _telethon_build_label(), plugin_count, addon_count
+    )
     await event.answer(text, alert=True)
 
 
@@ -127,92 +155,54 @@ async def lol(ult):
     xx = "https://github.com/ufoptg/UltroidBackup.git"
     rep = xx.replace(".git", f"/tree/{y}")
 
-    # Build rich alive message using InputRichMessageHTML
-    from telethon.tl.types import (
-        InputRichMessageHTML,
-    )
-
-    an = "━〔 ✦ ᴜʟᴛʀᴏɪᴅ-ᴜꜱᴇʀʙᴏᴛ ✦ 〕━"
-    y = "main"
-    xx = "https://github.com/ufoptg/UltroidBackup.git"
-    rep = xx.replace(".git", f"/tree/{y}")
-    uptime = fns.time_formatter((time.time() - start_time) * 1000)
-
     if _e := udB.get_key("ALIVE_EMOJI"):
         an = an.replace("✦", _e)
 
     # Build rich HTML message
+    plugin_count, addon_count = _alive_plugin_counts()
     html_text = (
         f"<blockquote expandable><b>{an}</b></blockquote>\n\n"
         f"<b>✦ Version</b> - <code>{ultroid_version} [{HOSTED_ON}]</code>\n"
-        f"<b>✦ Py-Ultroid</b> - <code>{UltVer}</code>\n"
         f"<b>✦ Python</b> - <code>{pyver()}</code>\n"
         f"<b>✦ Uptime</b> - <code>{uptime}</code>\n"
-        f"<b>✦ Telethon</b> - <code>{__version__}</code>\n"
+        f"<b>✦ Telethon</b> - <code>{_telethon_build_label()}</code>\n"
+        f"<b>✦ Plugins</b> - <code>{plugin_count}</code>\n"
+        f"<b>✦ Addons</b> - <code>{addon_count}</code>\n"
         f"<b>✦ Branch</b> - <code>main</code>\n\n"
         f"{header}\n\n"
         f'<a href="{rep}">📂 {y}</a>'
     )
-
-    # The current Telethon fork exposes URL buttons as KeyboardInlineButton
-    # wrapping InlineButtonTypeUrl. RichMessageHTML does not accept a reply
-    # markup argument, so the classic button fallback below remains the
-    # transport for this alive message.
-    rich_msg = InputRichMessageHTML(html=html_text)
-
-    try:
-        if pic:
+    markup = RichMarkup(html_text, "html")
+    if pic:
+        source = pic
+        if isinstance(pic, str):
             try:
-                await x.edit(
-                    rich_msg,
-                    file=pic,
-                    link_preview=False,
-                )
-                return await ult.try_delete()
-            except ChatSendMediaForbiddenError:
-                pass
-            except Exception as er:
-                LOGS.exception(er)
-    except Exception as er:
-        LOGS.exception(er)
-
-    # Fallback to text message
-    als = (
-        f"<b>{an}</b>\n\n"
-        f"<b>✦ Version</b> - <code>{ultroid_version} [{HOSTED_ON}]</code>\n"
-        f"<b>✦ Py-Ultroid</b> - <code>{UltVer}</code>\n"
-        f"<b>✦ Python</b> - <code>{pyver()}</code>\n"
-        f"<b>✦ Uptime</b> - <code>{uptime}</code>\n"
-        f"<b>✦ Telethon</b> - <code>{__version__}</code>\n"
-        f"<b>✦ Branch</b> - <code>main</code>\n\n"
-        f"{header}\n\n"
-        f'<a href="{rep}">📂 {y}</a>'
-    )
-
-    if _e := udB.get_key("ALIVE_EMOJI"):
-        als = als.replace("✦", _e)
-
-    await eor(
+                source = resolve_bot_file_id(pic)
+            except (TypeError, ValueError):
+                source = None
+            if source is None and os.path.isfile(pic):
+                source = pic
+        if source is not None:
+            kind = "document" if isinstance(source, InputDocument) else "photo"
+            media_html = (
+                '<tg-document src="alive"></tg-document>'
+                if kind == "document"
+                else '<img src="alive" alt="Alive"/>'
+            )
+            markup = RichMarkup(
+                f"{html_text}\n{media_html}",
+                "html",
+                (RichFile("alive", source, kind),),
+            )
+    await edit_rich(
+        ult.client,
+        x.chat_id,
         x,
-        als,
-        parse_mode="html",
+        markup,
+        buttons=None if inline else buttons,
         link_preview=False,
-        buttons=(
-            [
-                [
-                    (
-                        "📂 Repo",
-                        "url",
-                        "https://github.com/TeamUltroid/Ultroid",
-                        "primary",
-                    ),
-                    ("💬 Support", "url", "https://t.me/UltroidSupportChat", "primary"),
-                ],
-            ]
-            if not inline
-            else None
-        ),
     )
+    return await ult.try_delete()
 
 
 @ultroid_cmd(pattern="ping$", chats=[], type=["official", "assistant"])
@@ -222,10 +212,8 @@ async def _(event):
     end = round((time.time() - start) * 1000)
     uptime = fns.time_formatter((time.time() - start_time) * 1000)
 
-    # Edit the placeholder in place. Passing an InputRichMessageHTML to
-    # `Message.edit` used to hand a TL object to the markdown parser, which
-    # raises TypeError; the handler then called `eor`, so the user saw both
-    # the placeholder and the result as two separate messages.
+    # This is ordinary text, so keep the ping edit on Telethon's normal path;
+    # explicit RichMarkup edits use the raw layer-230 rich engine above.
     text = (
         f"**⚡ Pong !!**\n\n"
         f"  `Latency` : `{end}ms`\n"
@@ -333,54 +321,93 @@ async def _(event):
     await event.try_delete()
 
 
+def _alive_inline_markup(uptime, branch, media=None):
+    """Build the independent ``@bot alive`` status card as native rich HTML."""
+    header = udB.get_key("ALIVE_TEXT") or get_string("bot_1")
+    header_markup = coerce_to_rich_markup(str(header), parse_mode="html")
+    header_html = header_markup.text if header_markup else html.escape(str(header))
+    plugin_count, addon_count = _alive_plugin_counts()
+    rows = (
+        ("Version", f"{ultroid_version} [{HOSTED_ON}]"),
+        ("Python", pyver()),
+        ("Telethon", _telethon_build_label()),
+        ("Uptime", uptime),
+        ("Branch", branch),
+        ("Plugins", str(plugin_count)),
+        ("Addons", str(addon_count)),
+    )
+    parts = [
+        "<h1>Ultroid · Alive</h1>",
+        f"<p>{header_html}</p>",
+        "<hr>",
+        '<table class="bordered compact"><tr><th>Item</th><th>Details</th></tr>',
+    ]
+    parts.extend(
+        f"<tr><td>{html.escape(str(label))}</td>"
+        f"<td>{html.escape(str(value))}</td></tr>"
+        for label, value in rows
+    )
+    parts.extend(
+        (
+            "</table>",
+        )
+    )
+    files = ()
+    if media is not None:
+        kind, source = media
+        file_id = "alive-status-media"
+        if kind == "document":
+            parts.append(f'<figure><tg-document src="{file_id}"></tg-document></figure>')
+        else:
+            parts.append(f'<figure><img src="{file_id}" alt="Ultroid"/></figure>')
+        files = (RichFile(file_id, source, kind),)
+    parts.extend(("<hr>", f"<p><i>page 1 of 1 • total {len(rows)}</i></p>"))
+    return RichMarkup("".join(parts), "html", files)
+
+
 @in_pattern("alive", owner=True)
 async def inline_alive(ult):
     pic = udB.get_key("ALIVE_PIC")
     if isinstance(pic, list):
-        pic = choice(pic)
+        pic = choice(pic) if pic else None
     uptime = fns.time_formatter((time.time() - start_time) * 1000)
-    header = udB.get_key("ALIVE_TEXT") or get_string("bot_1")
-    y = Repo().active_branch
-    xx = Repo().remotes[0].config_reader.get("url")
-    rep = xx.replace(".git", f"/tree/{y}")
-    kk = f"<a href={rep}>{y}</a>"
-    als = in_alive.format(
-        header, f"{ultroid_version} [{HOSTED_ON}]", UltVer, pyver(), uptime, kk
-    )
+    try:
+        branch = str(Repo().active_branch) if Repo is not None else "unknown"
+    except Exception as exc:
+        LOGS.debug("inline_alive: branch lookup failed (%s)", type(exc).__name__)
+        branch = "unknown"
 
-    if _e := udB.get_key("ALIVE_EMOJI"):
-        als = als.replace("🌀", _e)
-    builder = ult.builder
+    media = None
     if pic:
-        try:
-            if ".jpg" in pic:
-                results = [
-                    await builder.photo(
-                        pic, text=als, parse_mode="html", buttons=buttons
-                    )
-                ]
-            else:
-                if _pic := resolve_bot_file_id(pic):
-                    pic = _pic
-                    buttons.insert(0, *ikm([(get_string("bot_2"), "alive")]))
-                results = [
-                    await builder.document(
-                        pic,
-                        title="Inline Alive",
-                        description="@TeamUltroid",
-                        parse_mode="html",
-                        buttons=buttons,
-                    )
-                ]
-            return await ult.answer(results)
-        except Exception as er:
-            LOGS.exception(er)
-    result = [
-        await builder.article(
-            "Alive", text=als, parse_mode="html", link_preview=False, buttons=buttons
-        )
-    ]
-    await ult.answer(result)
+        source = pic
+        if isinstance(pic, str):
+            try:
+                source = resolve_bot_file_id(pic)
+            except (TypeError, ValueError):
+                source = None
+            if source is None and os.path.isfile(pic):
+                source = pic
+        if source is not None:
+            kind = "document" if isinstance(source, InputDocument) else "photo"
+            media = (kind, source)
+
+    alive_buttons = ikm(
+        [
+            [
+                (get_string("bot_3"), "url", "https://github.com/Mahesh953-hub/SarahUB"),
+                (get_string("bot_4"), "url", "https://t.me/UltroidSupportChat"),
+            ]
+        ],
+        icon=False,
+    )
+    article = await InlineResultBuilder(ult).article_rich(
+        title="Ultroid · Alive",
+        description="Ultroid userbot status",
+        payload=_alive_inline_markup(uptime, branch, media),
+        format="html",
+        buttons=alive_buttons,
+    )
+    await ult.answer([article] if article is not None else [])
 
 
 # --------------------------------------------------------------------- #

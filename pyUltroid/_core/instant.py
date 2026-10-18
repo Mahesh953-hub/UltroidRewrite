@@ -13,16 +13,12 @@ from __future__ import annotations
 import asyncio
 import re
 import secrets
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
     Union,
 )
-from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 
 from telethon import TelegramClient, events
 from telethon.errors.rpcbaseerrors import RPCError
@@ -36,8 +32,9 @@ from telethon.errors.rpcerrorlist import (
 )
 from telethon.tl.custom.inlineresults import InlineResults as _TLInlineResults
 
+from custom.entities import normalize_parsed
+
 from ..startup.logger import LOGS
-from .entities import normalize_parsed
 from .inlineresults import InlineResults
 from .pipeline import STOP, pipeline_for
 
@@ -244,12 +241,7 @@ class InstantResult:
         return await method(merged.pop("file", self.file), **_drop_none(merged))
 
     def as_text(self) -> tuple[str, list[Any]]:
-        """The text this result would send, normalised to ``(text, entities)``.
-
-        Used by the ``eor`` fallback. It is tolerant of a ``text`` that is
-        already a ``(text, entities)`` pair, which is what a ``CustomMarkdown``
-        or ``MarkdownV3`` ``parse()`` hands back.
-        """
+        """Return normalized display text and entities for inspection."""
         return normalize_parsed(self.text, fallback=self.title)
 
 
@@ -625,9 +617,11 @@ class InstantInline:
     async def _answer_empty(self, event: Any, reason: str) -> None:
         """Answer with a single inert article so the client stops spinning."""
         try:
+            from .events import InlineResultBuilder
+
             await event.answer(
                 [
-                    await event.builder.article(
+                    await InlineResultBuilder(event).article(
                         title=reason,
                         text=reason,
                         description="Nothing to show.",
@@ -730,75 +724,29 @@ class InstantInline:
         reply: bool = True,
         chat: Any = None,
         via: bool = True,
-        fallback: bool = True,
         silent: bool = False,
     ) -> Any:
         """Answer ``event`` with an inline result, then retire the session.
 
         This is the whole round trip in one await: register, query, click,
         close. The result replies to ``event`` so the attribution appears on a
-        message visibly answering the trigger. When the round trip cannot run
-        and ``fallback`` is set, the same text and buttons go out through
-        ``eor`` instead.
+        message visibly answering the trigger. An unavailable inline path
+        raises; it never impersonates the user with a plain-message fallback.
         """
         self._resolve_clients(event)
         destination = chat if chat is not None else event.chat_id
         reply_to = getattr(event, "id", None) if reply else None
         try:
-            try:
-                return await self.send(
-                    destination,
-                    text=text,
-                    reply_to=reply_to,
-                    index=index,
-                    via=via,
-                    silent=silent,
-                )
-            finally:
-                self.close()
-        except InlineUnavailable as exc:
-            if not fallback:
-                raise
-            LOGS.info("instant inline %s fell back to eor: %s", self._token, exc)
-            return await self._fallback(event, text, index)
-
-    async def _fallback(self, event: Any, text: str, index: int) -> Any:
-        """Send the result's own text and buttons without inline attribution.
-
-        Telegram cannot produce ``via @bot`` without a bot, so this path drops
-        the tag and keeps everything else: the text, its entities and the
-        buttons all survive.
-        """
-        query = InstantQuery(
-            event=event,
-            text=text,
-            offset="",
-            page=0,
-            user_id=getattr(event, "sender_id", None),
-            session=self,
-        )
-        specs = await self._specs(query)
-        spec = next(
-            (
-                s
-                for i, s in enumerate(specs)
-                if i == index and isinstance(s, InstantResult)
-            ),
-            None,
-        )
-        if spec is None:
-            raise InlineUnavailable(
-                "inline is unavailable and result "
-                f"{index} cannot be rendered as a plain message"
+            return await self.send(
+                destination,
+                text=text,
+                reply_to=reply_to,
+                index=index,
+                via=via,
+                silent=silent,
             )
-        body, entities = spec.as_text()
-        return await _edit_or_reply(
-            event,
-            body,
-            formatting_entities=entities or None,
-            buttons=spec.buttons,
-            link_preview=spec.link_preview,
-        )
+        finally:
+            self.close()
 
 
 # ── one-shot helper ───────────────────────────────────────────────────────
@@ -811,7 +759,6 @@ async def instant_inline(
     reply: bool = True,
     chat: Any = None,
     via: bool = True,
-    fallback: bool = True,
     bot: TelegramClient | None = None,
     user: TelegramClient | None = None,
     gallery: bool = False,
@@ -842,7 +789,6 @@ async def instant_inline(
         reply=reply,
         chat=chat,
         via=via,
-        fallback=fallback,
     )
 
 
@@ -874,13 +820,3 @@ def _query_user_id(event: Any) -> int | None:
         if isinstance(value, int):
             return value
     return None
-
-
-async def _edit_or_reply(event: Any, text: str, **kwargs: Any) -> Any:
-    """Route through ``eor`` so outgoing messages are edited, not duplicated."""
-    eor = getattr(event, "eor", None)
-    if callable(eor):
-        return await eor(text, **kwargs)
-    from ..startup.patching import eor as _eor
-
-    return await _eor(event, text, **kwargs)

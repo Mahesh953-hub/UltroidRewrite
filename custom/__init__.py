@@ -1,6 +1,31 @@
-from .debug import DebugKit, debug_kit, aexec, shell
+from .debug import DebugKit, aexec, debug_kit, shell
+from .entities import (
+    RICH_MD,
+    bankcard,
+    blockquote,
+    combine,
+    custom_emoji,
+    emoji_entity,
+    expandable,
+    formatted_date,
+    mdv3_to_entities,
+    normalize_parsed,
+    parse_rich,
+    plain_text,
+    premium_emoji,
+    spoiler,
+    unparse_rich,
+    with_emojis,
+)
 from .fmt import FmtKit, fmt_kit, fmtbar, fmtbyte, fmtexc, fmtmsg, fmtsec, prog
-from .util import UtilKit, util_kit, patch, usecs
+from .rich import (
+    STYLE_PRESETS,
+    RichKit,
+    button,
+    resolve_style,
+    rich_ikm,
+    rich_kit,
+)
 from .tg import (
     DEFAULT_ICON_UNICODE,
     TG_ANDROID_ICON_DOCUMENT_IDS,
@@ -12,73 +37,61 @@ from .tg import (
     request_peer_button,
     rkm,
 )
+from .util import UtilKit, patch, usecs, util_kit
+
+try:
+    from .icons import IconKit, icon_kit
+except ImportError:
+    IconKit = icon_kit = None
 
 __all__ = [
     "DEFAULT_ICON_UNICODE",
+    "RICH_MD",
+    "STYLE_PRESETS",
     "TG_ANDROID_ICON_DOCUMENT_IDS",
     "ButtonKit",
-    "button_kit",
     "DebugKit",
-    "debug_kit",
     "FmtKit",
-    "fmt_kit",
     "IconKit",
-    "icon_kit",
     "RichKit",
-    "rich_kit",
     "UtilKit",
-    "util_kit",
     "aexec",
+    "bankcard",
+    "blockquote",
+    "button",
+    "button_kit",
+    "combine",
+    "custom_emoji",
+    "debug_kit",
+    "emoji_entity",
+    "expandable",
+    "fmt_kit",
     "fmtbar",
     "fmtbyte",
     "fmtexc",
     "fmtmsg",
     "fmtsec",
+    "formatted_date",
+    "icon_kit",
     "ids",
     "ikm",
+    "mdv3_to_entities",
+    "normalize_parsed",
+    "parse_rich",
     "patch",
+    "plain_text",
+    "premium_emoji",
     "prog",
     "register_button_type",
     "request_peer_button",
+    "resolve_style",
+    "rich_ikm",
+    "rich_kit",
     "rkm",
     "shell",
+    "spoiler",
+    "unparse_rich",
     "usecs",
+    "util_kit",
+    "with_emojis",
 ]
-
-# The rich layer needs the optional markdown-v3 extras; the class layer is
-# capability-gated (None when absent) rather than deferred behind a hook.
-try:
-    from .rich import (  # noqa: F401
-        RICH_MD,
-        STYLE_PRESETS,
-        RichKit,
-        button,
-        emoji_entity,
-        parse_rich,
-        premium_emoji,
-        resolve_style,
-        rich_ikm,
-        rich_kit,
-        unparse_rich,
-        with_emojis,
-    )
-except Exception:
-    RichKit = rich_kit = None
-else:
-    __all__ += [
-        "RICH_MD",
-        "STYLE_PRESETS",
-        "button",
-        "emoji_entity",
-        "parse_rich",
-        "premium_emoji",
-        "resolve_style",
-        "rich_ikm",
-        "unparse_rich",
-        "with_emojis",
-    ]
-
-try:
-    from .icons import IconKit, icon_kit  # noqa: F401
-except Exception:
-    IconKit = icon_kit = None

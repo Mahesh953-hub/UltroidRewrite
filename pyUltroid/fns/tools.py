@@ -388,7 +388,7 @@ class ToolKit:
     @staticmethod
     # -----------------------------------------------------------------------------------#
 
-    def check_filename(self, filroid):
+    def check_filename(filroid):
         if os.path.exists(filroid):
             no = 1
             while True:
@@ -966,4 +966,3 @@ class TgConverter:
                     return await TgConverter.ffmpeg_convert(
                         input_file, name, remove=True if extn == "webm" else remove_old
                     )
-

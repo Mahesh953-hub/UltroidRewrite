@@ -9,8 +9,8 @@
 
 • `{i}factcheck <text>` `<reply to a post>`
     Add or update the fact-check attached to the replied message via the
-    fork's ``messages.EditFactCheckRequest`` (schema: ``FactCheck``,
-    layer 228). MarkdownV3 in `<text>` is preserved as entities.
+    fork's ``messages.EditFactCheckRequest`` (schema: ``FactCheck`` in the
+    pinned Layer 230 build). MarkdownV3 in `<text>` is preserved as entities.
 
     **Note:** unlike most moderator tools, adding a fact-check is *not*
     a normal chat-admin right — Telegram gates
@@ -32,7 +32,7 @@
 from telethon.errors.rpcbaseerrors import RPCError
 from telethon.tl import functions, types
 
-from pyUltroid._core.entities import RICH_MD, mdv3_to_entities
+from custom.entities import RICH_MD, mdv3_to_entities
 
 from . import LOGS, eod, ultroid_cmd
 

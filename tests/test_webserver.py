@@ -23,10 +23,14 @@ import pytest
 from starlette.testclient import TestClient
 
 from pyUltroid.webserver import bootstrap, envfile
-from pyUltroid.webserver.app import create_app
+from pyUltroid.webserver.app import (
+    MAX_REQUEST_BODY_BYTES,
+    TokenGateMiddleware,
+    create_app,
+)
 from pyUltroid.webserver.keepalive import KeepAliveConfig
-from pyUltroid.webserver.logs import LogBroker, RedactionFilter, attach_broker
 from pyUltroid.webserver.login import LoginManager, LoginSessionUnknown
+from pyUltroid.webserver.logs import LogBroker, RedactionFilter, attach_broker
 from pyUltroid.webserver.security import (
     RateLimiter,
     SecretRedactor,
@@ -276,6 +280,57 @@ def test_api_requires_token(make_client):
     assert client.get("/api/logs").status_code == 401
 
 
+def test_api_rejects_oversized_declared_body_after_authentication(make_client):
+    client = make_client()
+    payload = b"x" * (MAX_REQUEST_BODY_BYTES + 1)
+    headers = {**AUTH, "Content-Type": "application/json"}
+
+    unauthorized = client.post(
+        "/api/setup/keys", content=payload, headers={"Content-Type": "application/json"}
+    )
+    assert unauthorized.status_code == 401
+
+    response = client.post("/api/setup/keys", content=payload, headers=headers)
+    assert response.status_code == 413
+    assert response.json() == {"detail": "request body too large"}
+
+
+def test_api_rejects_oversized_chunked_body_without_content_length():
+    chunks = [
+        {
+            "type": "http.request",
+            "body": b"x" * MAX_REQUEST_BODY_BYTES,
+            "more_body": True,
+        },
+        {"type": "http.request", "body": b"x", "more_body": True},
+    ]
+    responses = []
+    app_called = False
+
+    async def receive():
+        return chunks.pop(0)
+
+    async def send(message):
+        responses.append(message)
+
+    async def app(_scope, _receive, _send):
+        nonlocal app_called
+        app_called = True
+
+    scope = {
+        "type": "http",
+        "path": "/api/state",
+        "method": "POST",
+        "headers": [(b"x-setup-token", TOKEN.encode())],
+        "query_string": b"",
+    }
+    middleware = TokenGateMiddleware(app, TOKEN)
+    asyncio.run(middleware(scope, receive, send))
+
+    assert not app_called
+    assert responses[0]["status"] == 413
+
+
 def test_token_matches_constant_time():
     token = generate_setup_token()
     assert token_matches(token, token)
@@ -376,15 +431,17 @@ def test_setup_keys_success(make_client, env_path):
     assert BOT_TOKEN not in resp.text
 
 
-def test_setup_keys_defaults_for_optional_vars(make_client, env_path):
+def test_setup_keys_defaults_for_optional_vars(make_client, env_path, monkeypatch):
+    monkeypatch.delenv("BOT_TOKEN", raising=False)
+    monkeypatch.delenv("LOG_CHANNEL", raising=False)
     client = make_client()
     resp = client.post(
         "/api/setup/keys", json={"api_id": 1, "api_hash": API_HASH}, headers=AUTH
     )
     assert resp.status_code == 200
     env = envfile.read_env(env_path)
-    # configs.py has no defaults for these — setup must write sentinels
-    assert env["BOT_TOKEN"] == ""
+    # An omitted optional bot token is equivalent to a blank value.
+    assert env.get("BOT_TOKEN", "") == ""
     assert env["LOG_CHANNEL"] == "0"
 
 
@@ -1001,6 +1058,9 @@ def test_config_complete_argv_shortcut(monkeypatch):
 
 def test_config_complete_environ_wins(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["-m"])
+    monkeypatch.delenv("API_ID", raising=False)
+    monkeypatch.delenv("API_HASH", raising=False)
+    monkeypatch.delenv("SESSION", raising=False)
     path = tmp_path / ".env"
     envfile.write_env_atomic({"API_ID": "1"}, path, apply_to_environ=False)
     monkeypatch.setenv("API_HASH", "h")

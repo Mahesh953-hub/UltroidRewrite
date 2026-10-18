@@ -21,7 +21,7 @@ def _inline_mention(user):
     try:
         from plugins import inline_mention
 
-        return fns.inline_mention(user)
+        return inline_mention(user)
     except Exception:
         return getattr(user, "first_name", None) or str(user)
 

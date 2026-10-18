@@ -22,7 +22,7 @@ from pyUltroid._core.richmsg import (
     coerce_to_rich_markup,
     edit_rich,
     normalize_blocks,
-    render_blocks_native_html,
+    rich_markup_from_blocks,
 )
 from pyUltroid.dB._core import HELP, LIST
 from pyUltroid.fns.command_help import (
@@ -86,10 +86,10 @@ def _markdown_docs_markup(text):
 
 def _help_blocks():
     """Build the overview-first Help Menu as native RichMessage HTML."""
-    intro = RichBlocks(engine="rich", format="html", is_bot=True)
+    intro = RichBlocks(format="html")
     intro.header("Help Menu", level=2)
     intro.paragraph("Browse plugin commands, inline tools, and account settings from here.")
-    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview = RichBlocks(format="html")
     overview.header("Overview", level=2)
     rows = _help_overview_rows()
     overview.table(
@@ -98,13 +98,15 @@ def _help_blocks():
         is_bordered=True,
         is_striped=True,
     )
-    intro_html, _files = render_blocks_native_html(normalize_blocks(intro))
-    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
+    markup = rich_markup_from_blocks(
+        normalize_blocks(intro) + normalize_blocks(overview), format="html"
+    )
     total_handlers = sum(int(row[1]) for row in rows)
     return RichMarkup(
-        f"{intro_html}<hr>{overview_html}<hr>"
+        f"{markup.text}<hr>"
         f"<p><i>{_page_footer(1, 1, total_handlers)}</i></p>",
         "html",
+        markup.files,
     )
 
 
@@ -291,7 +293,6 @@ async def _edit_help(event, text):
         event.chat_id,
         event,
         markup,
-        engine="rich",
         format="html",
         link_preview=False,
     )
@@ -353,12 +354,11 @@ def _plugin_help_markup(
     total_handlers = len(commands) + len(pmf_entries)
     body = "".join(str(entry) for entry in entries or ())
     blocks = (
-        RichBlocks(engine="rich", format="html", is_bot=True)
+        RichBlocks(format="html")
         .header(_plugin_title(name), level=2)
         .paragraph("Browse this plugin's command handlers, documentation, and controls.")
     )
-    intro_html, _files = render_blocks_native_html(normalize_blocks(blocks))
-    overview = RichBlocks(engine="rich", format="html", is_bot=True)
+    overview = RichBlocks(format="html")
     overview.header("Overview", level=2)
     contains = f"{len(commands)} command(s)"
     if pmf_entries:
@@ -372,13 +372,11 @@ def _plugin_help_markup(
         is_bordered=True,
         is_striped=True,
     )
-    overview_html, _files = render_blocks_native_html(normalize_blocks(overview))
-    detail_blocks = RichBlocks(engine="rich", format="html", is_bot=True)
+    detail_blocks = RichBlocks(format="html")
     if commands:
         detail_blocks.expandable("Commands", "\n".join(commands))
     if pmf_entries:
         detail_blocks.expandable("PMF guide", _pmf_guide_text(pmf_entries))
-    details_html, _files = render_blocks_native_html(normalize_blocks(detail_blocks))
     if body.strip():
         converted = _markdown_docs_markup(body)
         body_html = converted.text if converted else html.escape(body)
@@ -388,10 +386,17 @@ def _plugin_help_markup(
     if not commands:
         documentation += "<p>No commands are registered for this plugin.</p>"
     footer_total = total_handlers
+    markup = rich_markup_from_blocks(
+        normalize_blocks(blocks)
+        + normalize_blocks(overview)
+        + normalize_blocks(detail_blocks),
+        format="html",
+    )
     return RichMarkup(
-        f"{intro_html}<hr>{overview_html}<hr>{details_html}{documentation}"
+        f"{markup.text}<hr>{documentation}"
         f"<hr><p><i>{_page_footer(1, 1, footer_total)}</i></p>",
         "html",
+        markup.files,
     )
 
 

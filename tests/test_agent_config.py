@@ -254,6 +254,12 @@ class ProviderReadsThroughConfigTests(unittest.TestCase):
         self.db.store["AGENT_CLOUD_APIMIX_BASE"] = "https://mirror.example/v1"
         self.assertEqual(provider.base_url, "https://mirror.example/v1")
 
+    def test_configured_apimix_is_default_unless_another_provider_is_pinned(self):
+        self.db.store["AGENT_CLOUD_APIMIX_KEY"] = "apx-test-key"
+        self.assertEqual(AgentConfig().config_default_provider(), "apimix")
+        self.db.store["AGENT_PROVIDER"] = "openrouter"
+        self.assertEqual(AgentConfig().config_default_provider(), "openrouter")
+
     def test_apimix_is_unconfigured_without_a_key(self):
         providers = self._import_providers()
         self.assertFalse(providers.ApimixProvider().is_configured())
@@ -748,16 +754,21 @@ class ProviderSystemPromptTests(unittest.TestCase):
     def test_a_forced_provider_sys_is_appended(self):
         self.db.store["AGENT_CLOUD_GROQ_SYS"] = "Always answer in rhyme."
         merged = self.agent_mod._effective_system_prompt("base", "groq")
-        self.assertEqual(merged, "base\n\nAlways answer in rhyme.")
+        self.assertTrue(merged.startswith("base\n\nAlways answer in rhyme."))
+        self.assertIn(self.agent_mod._RICH_RESPONSE_POLICY, merged)
 
     def test_no_sys_leaves_the_prompt_alone(self):
         merged = self.agent_mod._effective_system_prompt("base", "groq")
-        self.assertEqual(merged, "base")
+        self.assertEqual(
+            merged, "base\n\n" + self.agent_mod._RICH_RESPONSE_POLICY
+        )
 
     def test_a_sys_without_a_base_stands_alone(self):
         self.db.store["AGENT_CLOUD_GROQ_SYS"] = "You are terse."
         merged = self.agent_mod._effective_system_prompt("", "groq")
-        self.assertEqual(merged, "You are terse.")
+        self.assertEqual(
+            merged, "You are terse.\n\n" + self.agent_mod._RICH_RESPONSE_POLICY
+        )
 
     def test_an_unpinned_provider_applies_the_pinned_default(self):
         self.db.store["AGENT_PROVIDER"] = "gemini"

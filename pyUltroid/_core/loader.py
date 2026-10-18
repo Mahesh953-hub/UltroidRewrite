@@ -21,10 +21,10 @@ from importlib import import_module
 from importlib.util import cache_from_source
 from logging import Logger
 from traceback import format_exc
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple
+from typing import Any
 
-from ..startup.logger import LOGS
 from ..extender._manifest import DepSpec
+from ..startup.logger import LOGS
 
 # Status constants
 STATUS_ACTIVE = "active"
@@ -330,6 +330,9 @@ def _hre_post_unload(name: str) -> None:
 # offline plugin scans, ...). Never raises and never blocks plugin loading
 #  -  no usable connected client / no configured ``LOG_CHANNEL`` silently
 # degrades to the pre-existing render-to-disk + log behaviour.
+# Keep the outbound Plugin Load Error category disabled by default; local
+# loader errors and rendered error cards remain available for diagnosis.
+SEND_PLUGIN_LOAD_ERROR_NOTICES = False
 
 #: Strong refs for fire-and-forget notice tasks scheduled from a sync call
 #: site (:func:`_dispatch_error_notice_sync`)  -  without this, nothing holds
@@ -374,6 +377,8 @@ async def _send_error_notice_async(
     error card (``generate_error_card``'s return value); ``None`` sends the
     text notice alone.
     """
+    if not SEND_PLUGIN_LOAD_ERROR_NOTICES:
+        return
     try:
         try:
             from pyUltroid import udB
@@ -428,6 +433,8 @@ def _dispatch_error_notice_sync(
     (matching the async call sites' own "no client yet" guard). Never
     raises.
     """
+    if not SEND_PLUGIN_LOAD_ERROR_NOTICES:
+        return
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -510,20 +517,12 @@ class PluginHelp:
         it has no blockquote support) gets a folded "tap to expand" help
         body instead of a wall of text.
 
-        Returns *text* unchanged (never raises) whenever MarkdownV3 is
-        unavailable, or when there's no real multi-line body worth
-        quoting  -  callers must treat an unchanged return value as "not
-        rich" and keep using the plain default-parse-mode path for it,
-        exactly like :meth:`get` already does.
+        Returns *text* unchanged when there's no real multi-line body worth
+        quoting. The repository-pinned Telethon build provides MarkdownV3.
         """
         if not text:
             return text
-        try:
-            from .entities import RICH_MD
-        except Exception:
-            return text
-        if not RICH_MD.available:
-            return text
+
         lines = text.split("\n")
         if len(lines) < 2:
             return text
@@ -751,8 +750,6 @@ class AsyncPluginLoader:
         core.registry.register(manifest)
 
         try:
-            from .loader import plugin_help
-
             core.plugin_help.register(manifest.name, module, key)
         except Exception as exc:
             self._logger.debug(f"[loader] help register failed for '{name}': {exc}")
@@ -1016,7 +1013,7 @@ class AsyncPluginLoader:
         this path must also work from the legacy synchronous loader.
         """
         try:
-            from .. import LOGS, asst, ultroid_bot
+            from .. import asst, ultroid_bot
             from .._misc import misc
 
             clients = [c for c in (ultroid_bot, asst) if c is not None]
@@ -1213,8 +1210,9 @@ class AsyncPluginLoader:
         ``sys.modules``, drop it from the registry, and return a confirmation
         dict ``{name, handlers_removed, success}``.
         """
-        from ..ultroid import core
         from pyUltroid.dB._core import ADDONS, HELP, LIST, LOADED
+
+        from ..ultroid import core
 
         canonical, candidates = core.registry.resolve(name)
         if canonical is None:
@@ -1296,8 +1294,6 @@ class AsyncPluginLoader:
         # 6. Registry + backward-compat set + decoupled help + legacy HELP.
         core.registry.unregister(name)
         try:
-            from .loader import plugin_help
-
             core.plugin_help.unregister(name)
         except Exception:
             pass
@@ -1391,6 +1387,78 @@ class AsyncPluginLoader:
             "success": bool(manifest and manifest.is_active),
         }
 
+    def load_errored_paths(self) -> list[str]:
+        """Read persisted plugin failures from the bound runtime database."""
+        try:
+            from pyUltroid import udB
+
+            return _error_paths_value(udB.get_key("ERRORED_PLUGINS") if udB else None)
+        except Exception:
+            return []
+
+    def _persist_errored(self) -> None:
+        """Persist failures owned by the current core registry."""
+        from ..ultroid import core
+
+        try:
+            from pyUltroid import udB
+
+            if udB is not None:
+                udB.set_key(
+                    "ERRORED_PLUGINS",
+                    [
+                        manifest.path
+                        for manifest in core.registry.get_by_status(STATUS_ERRORED)
+                        if manifest.path
+                    ],
+                )
+        except Exception:
+            pass
+
+    async def retry_persisted_errors(
+        self, max_retries: int = 3, func=None
+    ) -> list[str]:
+        """Seed the core registry from persisted failures and retry them."""
+        from ..ultroid import core
+
+        for path in self.load_errored_paths():
+            plugin_id = _plugin_id(path)
+            if core.registry.get(plugin_id) is None:
+                core.registry.register(
+                    PluginManifest(name=plugin_id, path=path, status=STATUS_ERRORED)
+                )
+        return await self.retry_errored(max_retries=max_retries, func=func)
+
+    async def retry_errored(self, max_retries: int = 3, func=None) -> list[str]:
+        """Retry errored plugins and return names still errored afterwards."""
+        from ..ultroid import core
+
+        for attempt in range(1, max_retries + 1):
+            errored = core.registry.get_by_status(STATUS_ERRORED)
+            if not errored:
+                break
+            for manifest in errored:
+                if manifest.error_info and (
+                    "ImportError" in manifest.error_info
+                    or "ModuleNotFoundError" in manifest.error_info
+                ):
+                    continue
+                path = manifest.path or _locate_plugin(manifest.name)
+                if not path:
+                    continue
+                load_func = func or _func_for_path(path)
+                key = _key_for_path(path, self.key)
+                core.registry.unregister(manifest.name)
+                result = await self.load_plugin(path, func=load_func, key=key)
+                if result and result.is_active:
+                    LOGS.info(f"[loader] retry OK: {manifest.name} (attempt {attempt})")
+                else:
+                    LOGS.warning(
+                        f"[loader] retry failed: {manifest.name} (attempt {attempt})"
+                    )
+        self._persist_errored()
+        return [m.name for m in core.registry.get_by_status(STATUS_ERRORED)]
+
     def _reload_sync(self, name: str, path: str | None = None) -> dict:
         """Synchronous reload used by the backward-compat module function."""
         from ..ultroid import core
@@ -1468,6 +1536,7 @@ async def confirm_unload(
     import re as _re
 
     from telethon import events
+
     from custom.tg import ikm
 
     yes_data = f"unld_yes:{plugin_name}".encode()
@@ -1544,7 +1613,7 @@ async def confirm_unload(
     return True
 
 
-# Fallback system  -  errored plugins are retried and exposed via .errors
+# Fallback-system normalization shared by the core loader instance.
 def _error_paths_value(value) -> list[str]:
     """Normalize native database values and older JSON-string storage."""
     if isinstance(value, str):
@@ -1558,84 +1627,27 @@ def _error_paths_value(value) -> list[str]:
 
 
 def _persist_errored() -> None:
-    """Persist errored plugin paths in the database's native list format."""
-    from ..ultroid import core
-    try:
-        from pyUltroid import udB
-
-        if udB is not None:
-            udB.set_key(
-                "ERRORED_PLUGINS",
-                [
-                    manifest.path
-                    for manifest in core.registry.get_by_status(STATUS_ERRORED)
-                    if manifest.path
-                ],
-            )
-    except Exception:
-        pass
+    """Compatibility delegate; runtime code calls ``core.loader`` directly."""
+    return _get_default_loader()._persist_errored()
 
 
 def _load_errored_paths() -> list[str]:
-    """Read persisted failures from native-list or legacy JSON-string storage."""
-    try:
-        from pyUltroid import udB
-
-        return _error_paths_value(udB.get_key("ERRORED_PLUGINS") if udB else None)
-    except Exception:
-        return []
+    """Compatibility delegate for callers migrating to the core loader."""
+    return _get_default_loader().load_errored_paths()
 
 
 async def retry_persisted_errors(max_retries: int = 3, func=None) -> list[str]:
-    """Seed registry entries from persisted paths and retry them safely."""
-    from ..ultroid import core
-    for path in _load_errored_paths():
-        plugin_id = _plugin_id(path)
-        if core.registry.get(plugin_id) is None:
-            core.registry.register(
-                PluginManifest(name=plugin_id, path=path, status=STATUS_ERRORED)
-            )
-    return await retry_errored(max_retries=max_retries, func=func)
+    """Compatibility delegate; prefer ``core.loader.retry_persisted_errors``."""
+    return await _get_default_loader().retry_persisted_errors(
+        max_retries=max_retries, func=func
+    )
 
 
 async def retry_errored(max_retries: int = 3, func=None) -> list[str]:
-    """
-    Retry every errored plugin up to *max_retries* times this restart.
-
-    Returns the list of plugin names that are *still* errored after retrying.
-    """
-    from ..ultroid import core
-    for attempt in range(1, max_retries + 1):
-        errored = core.registry.get_by_status(STATUS_ERRORED)
-        if not errored:
-            break
-        for manifest in errored:
-            # Any ImportError is permanent - a missing module or a broken
-            # optional dependency can never import on a retry. Both class
-            # names appear in error_info (``ModuleNotFoundError`` is the
-            # subclass but its NAME does not contain "ImportError", so
-            # both strings are checked).
-            if manifest.error_info and (
-                "ImportError" in manifest.error_info
-                or "ModuleNotFoundError" in manifest.error_info
-            ):
-                continue
-            path = manifest.path or _locate_plugin(manifest.name)
-            if not path:
-                continue
-            load_func = func or _func_for_path(path)
-            key = _key_for_path(path)
-            # Drop the stale errored entry before re-attempting.
-            core.registry.unregister(manifest.name)
-            result = await core.loader.load_plugin(path, func=load_func, key=key)
-            if result and result.is_active:
-                LOGS.info(f"[loader] retry OK: {manifest.name} (attempt {attempt})")
-            else:
-                LOGS.warning(
-                    f"[loader] retry failed: {manifest.name} (attempt {attempt})"
-                )
-    _persist_errored()
-    return [m.name for m in core.registry.get_by_status(STATUS_ERRORED)]
+    """Compatibility delegate; prefer ``core.loader.retry_errored``."""
+    return await _get_default_loader().retry_errored(
+        max_retries=max_retries, func=func
+    )
 
 
 def register_errors_command(client=None) -> bool:

@@ -29,19 +29,20 @@ SYSTEM_PROMPT = """You are Ultroid  -  an intelligent, self-aware Telegram userb
 You have full access to the system you run on:
 
 CAPABILITIES:
-- shell_execute: Run any shell command on the EC2 instance
+- shell_execute: Run any shell command on the SarahUB runtime environment
 - code_search: Search and read your own live plugin source code
 - get_traces: Read your own execution history and error logs
 - update_check: Check for and apply updates to yourself
 - install_package: Install Python packages on demand
 - process_image: Transform images, generate error cards, code images, memes
 - send_message: Send Telegram messages
+- send_text_file: Send generated UTF-8 .txt/.md content to the current chat only
 - get_bot_status: Check your own running state
 - remember: Store and recall facts across conversations
 - web_search: Search the web for current information
 - web_fetch: Read a specific web page after searching
 - tg_route_send / tg_read: Send and read Telegram messages through the
-  master router (business/user/bot routing, replies, parse modes)
+  master router; tg_route_send sends plain text unless rich=true is explicit
 - plugin_manager: List, load, unload, or reload live plugins (load/unload
   are privileged and may be denied)
 - raw_mtproto: Invoke read-only raw MTProto requests from an allowlist
@@ -55,6 +56,20 @@ PERSONALITY:
 - You check traces before claiming something works
 - You prefer local LLM (Ollama) for simple tasks to save API costs
 - When asked to do something, you do it  -  you don't just describe how
+- For generated text-file requests, use send_text_file; do not write or send
+  arbitrary filesystem paths or credentials
+- RichMessages are optional, not mandatory. Use native RichMessage formatting
+  only when the actual sending account supports it and the user benefits from it.
+  Plain text is always acceptable and is required for unsupported user accounts.
+- In HTML, use readable headings, paragraphs, lists, tables
+  (table/tr/th/td), blockquotes, links, and pre/code blocks where useful.
+  Never wrap the entire response in a code fence. Escape literal markup in
+  examples, and do not output html/head/body wrappers.
+- Use ordinary sentence case and punctuation. Do not add decorative emoji,
+  small-cap alphabets, ornamental glyphs, fake color styling, or bot branding.
+- Rich text is for the final user-facing answer; keep tool protocol, arguments,
+  credentials, and shell transcripts private unless the user explicitly asks
+  for a safe, concise command or code example.
 
 OPERATING RULES:
 - Never access .env, *.session, or credential files
@@ -65,6 +80,34 @@ OPERATING RULES:
   round by round; delegate independent subtasks in one round when possible
 - If a tool is denied by capability policy, report the denial  -  do not retry
   or work around it"""
+
+_RICH_RESPONSE_POLICY = """TELEGRAM MESSAGE FORMAT:
+Native RichMessages are optional. Bots may use them; a user account must have
+Telegram Premium. Plain text is always a valid choice. Never retry a rejected
+RichMessage by issuing another RichMessage or by silently changing the sender.
+For tg_route_send, set rich=false for a deliberate ordinary text message; rich
+sends fail closed when the selected account is not eligible. Keep tool protocol
+and credentials private."""
+
+
+def _request_rich_instruction(allowed: bool | None) -> str:
+    """Describe this request's account-level RichMessage capability to the model."""
+    if allowed is False:
+        return (
+            "This request is being answered through an account that is not a bot "
+            "and is not confirmed as Telegram Premium. Do not produce or send a "
+            "native RichMessage for this account. Keep the final answer plain text; "
+            "when using tg_route_send, use rich=false unless you explicitly route "
+            "through a bot account that the tool confirms can send RichMessages. "
+            "The user may always choose ordinary plain-text messages."
+        )
+    if allowed is True:
+        return (
+            "The current reply account is a bot or a confirmed Telegram Premium "
+            "user, so native RichMessages are available; they remain optional. "
+            "Honor any request to send ordinary plain text instead."
+        )
+    return ""
 
 
 def _configured_system_prompt(provider_name: str | None) -> str:
@@ -88,9 +131,9 @@ def _configured_system_prompt(provider_name: str | None) -> str:
 def _effective_system_prompt(base: str | None, provider_name: str | None) -> str:
     """*base* with the provider's configured SYS joined as an addendum."""
     extra = _configured_system_prompt(provider_name)
-    if not extra:
-        return base or ""
-    return f"{base}\n\n{extra}" if base else extra
+    return "\n\n".join(
+        part.strip() for part in (base, extra, _RICH_RESPONSE_POLICY) if part
+    )
 
 
 # ── Conversation history
@@ -284,6 +327,7 @@ class UltroidAgent:
         max_rounds: int | None = None,
         scope: str = "",
         caps: frozenset[str] | None = None,
+        rich_messages_allowed: bool | None = None,
         _depth: int = 0,
     ) -> AgentResponse:
         """
@@ -309,10 +353,11 @@ class UltroidAgent:
                 use_cache=use_cache,
                 model=model,
                 tool_call=tool_call,
-            max_rounds=max_rounds,
-            scope=scope,
-            caps=caps,
-            _depth=_depth,
+                max_rounds=max_rounds,
+                scope=scope,
+                caps=caps,
+                rich_messages_allowed=rich_messages_allowed,
+                _depth=_depth,
         )
 
     async def _respond_locked(
@@ -331,6 +376,7 @@ class UltroidAgent:
         max_rounds: int | None,
         scope: str,
         caps: frozenset[str] | None = None,
+        rich_messages_allowed: bool | None = None,
         _depth: int = 0,
     ) -> AgentResponse:
         t0 = time.time()
@@ -363,6 +409,9 @@ class UltroidAgent:
         # The menu stores a per-provider system prompt (AGENT_*_SYS); it
         # joins the agent prompt as an addendum rather than replacing it.
         system = _effective_system_prompt(self._system, provider_name)
+        rich_instruction = _request_rich_instruction(rich_messages_allowed)
+        if rich_instruction:
+            system = f"{system}\n\nTelegram delivery policy:\n{rich_instruction}"
         chat_prompt = self.chat_system(chat_id)
         if chat_prompt:
             system = f"{system}\n\nChat instructions:\n{chat_prompt}"
@@ -602,6 +651,7 @@ class UltroidAgent:
         max_tokens: int = 2048,
         temperature: float = 0.7,
         model: str | None = None,
+        rich_messages_allowed: bool | None = None,
     ) -> AsyncGenerator[str]:
         """
         Stream the agent's response token by token.
@@ -611,6 +661,9 @@ class UltroidAgent:
         hist.add("user", user_message)
         messages = hist.get()
         system = _effective_system_prompt(self._system, provider_name)
+        rich_instruction = _request_rich_instruction(rich_messages_allowed)
+        if rich_instruction:
+            system = f"{system}\n\nTelegram delivery policy:\n{rich_instruction}"
         from pyUltroid.agent._skills import render_skills
 
         skill_block = render_skills(provider_name or None)
@@ -739,4 +792,3 @@ class UltroidAgent:
             "max_tool_rounds": MAX_TOOL_ROUNDS,
             "max_history": MAX_HISTORY,
         }
-

@@ -49,40 +49,43 @@ def _fake_udb():
     return SimpleNamespace(get_key=lambda key: None, set_key=lambda *a, **k: None)
 
 
-def _import_fns_tools():
+@contextmanager
+def _isolated_fns():
     with _isolated_sys_modules("pyUltroid"):
         with patch.dict(os.environ, SAFE_ENV), patch.object(sys, "argv", ["pytest"]):
             import pyUltroid
 
             pyUltroid.udB = _fake_udb()
-            from pyUltroid.fns import tools
+            from pyUltroid.fns import fns
 
-            return tools
+            yield fns
 
 
 def test_advice_returns_quote():
-    tools = _import_fns_tools()
-    tools.async_searcher = AsyncMock(return_value=[{"q": "Test quote", "a": "Author"}])
-    result = asyncio.run(tools.advice())
-    assert result == '"Test quote" — Author'
+    with _isolated_fns() as fns:
+        fns.async_searcher = AsyncMock(return_value=[{"q": "Test quote", "a": "Author"}])
+        result = asyncio.run(fns.advice())
+        assert result == '"Test quote"  -  Author'
 
 
 def test_advice_fallback_on_failure():
-    tools = _import_fns_tools()
-    tools.async_searcher = AsyncMock(side_effect=RuntimeError("network"))
-    result = asyncio.run(tools.advice())
-    assert "Stay focused" in result or "Unknown" in result
+    with _isolated_fns() as fns:
+        fns.async_searcher = AsyncMock(side_effect=RuntimeError("network"))
+        result = asyncio.run(fns.advice())
+        assert "Stay focused" in result and "Unknown" in result
 
 
 def test_import_library_imports_known_module():
-    tools = _import_fns_tools()
-    assert tools.import_library("json") is __import__("json")
+    with _isolated_fns() as fns:
+        assert fns.import_library("json") is __import__("json")
 
 
 def test_import_library_raises_on_missing():
-    tools = _import_fns_tools()
-    with pytest.raises(tools.DependencyMissingError):
-        tools.import_library("definitely_not_a_real_module_12345")
+    with _isolated_fns() as fns:
+        from pyUltroid.exceptions import DependencyMissingError
+
+        with pytest.raises(DependencyMissingError):
+            fns.import_library("definitely_not_a_real_module_12345")
 
 
 def test_sudo_specials_use_config():

@@ -18,8 +18,7 @@ renders anything. It owns three udB keys and nothing else:
     legacy). ``.ui cards on`` is the explicit opt-in to rich cards.
 ``UI_BUTTONS``
     ``"classic"`` or ``"styled"`` — legacy inline buttons vs the fork's
-    ``style=``/``icon=`` button kit (default: ``"classic"``, i.e. today's
-    behaviour).
+    ``style=``/``icon=`` button kit (default: ``"styled"``).
 
 Commands
 --------
@@ -51,7 +50,6 @@ that cycles the theme/button-style enums from inline buttons in the help
 page.
 """
 
-
 from pyUltroid._core.manifest import action, handle_manifest, manifest, toggle
 
 from . import udB, ultroid_cmd
@@ -62,7 +60,7 @@ _THEMES = ("default", "dark")
 _DEFAULT_THEME = "default"
 
 _BUTTON_STYLES = ("classic", "styled")
-_DEFAULT_BUTTON_STYLE = "classic"
+_DEFAULT_BUTTON_STYLE = "styled"
 
 _DEFAULT_CARDS = False
 

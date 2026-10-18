@@ -18,9 +18,7 @@ import sys
 import types
 
 import pytest
-
 from conftest import ROOT
-
 
 # ── helpers ───────────────────────────────────────────────────────────
 
@@ -68,8 +66,7 @@ def modules():
     if has("fastapi"):
         names += ("app", "miniapp")
     return {
-        name: importlib.import_module(f"pyUltroid.webserver.{name}")
-        for name in names
+        name: importlib.import_module(f"pyUltroid.webserver.{name}") for name in names
     }
 
 
@@ -98,7 +95,8 @@ def test_package_import_pulls_no_optional_dependency():
         timeout=120,
     )
     assert out.returncode == 0, out.stderr
-    assert out.stdout.strip().endswith("True"), out.stdout
+    expected_create_app_none = "False" if has("fastapi") else "True"
+    assert out.stdout.strip().split() == ["True", "True", expected_create_app_none]
 
 
 def test_every_advertised_name_resolves():
@@ -131,9 +129,7 @@ def test_every_advertised_name_resolves():
             "rotate_token",
         }
     missing = [
-        name
-        for name in ws.__all__
-        if name not in unavailable and not hasattr(ws, name)
+        name for name in ws.__all__ if name not in unavailable and not hasattr(ws, name)
     ]
     assert not missing, missing
     assert len(ws.__all__) > 40
@@ -162,9 +158,7 @@ def test_no_webserver_module_imports_pyultroid_at_module_level():
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):
                 names = [node.module or ""]
-                names += [
-                    f"{node.module or ''}.{alias.name}" for alias in node.names
-                ]
+                names += [f"{node.module or ''}.{alias.name}" for alias in node.names]
             for name in names:
                 if name == "pyUltroid" or name.startswith("pyUltroid."):
                     offenders.append(f"{path.name}:{node.lineno} {name}")
@@ -266,7 +260,9 @@ def test_envfile_complete_matches_the_legacy_gate(env):
     document = envfile.EnvFile(env)
     assert document.missing() == ("API_ID", "API_HASH", "SESSION")
     assert document.complete() is False
-    document.write({"API_ID": "1", "API_HASH": "a", "SESSION": "s"}, apply_to_environ=False)
+    document.write(
+        {"API_ID": "1", "API_HASH": "a", "SESSION": "s"}, apply_to_environ=False
+    )
     assert document.complete() is True
     document.write({"API_ID": "not-an-int"}, apply_to_environ=False)
     assert document.missing() == ("API_ID",)
@@ -509,6 +505,7 @@ def test_setup_state_retarget_disposes_the_old_manager():
         standalone=False,
         manager_factory=lambda i, h, c=None: Manager(i, h),
     )
+
     async def scenario():
         setup.api_id, setup.api_hash = 1, "hash"
         first = setup.manager()
@@ -833,9 +830,9 @@ def test_login_error_mapper_covers_the_documented_statuses():
     app = importlib.import_module("pyUltroid.webserver.app")
     telethon_errors = importlib.import_module("telethon.errors")
     mapper = app.LoginErrorMapper()
-    assert mapper.describe(telethon_errors.PhoneNumberInvalidError())[0] == 400
-    assert mapper.describe(telethon_errors.PhoneCodeExpiredError())[0] == 400
-    assert mapper.describe(telethon_errors.FloodWaitError())[0] == 429
+    assert mapper.describe(telethon_errors.PhoneNumberInvalidError(None))[0] == 400
+    assert mapper.describe(telethon_errors.PhoneCodeExpiredError(None))[0] == 400
+    assert mapper.describe(telethon_errors.FloodWaitError(None, 3))[0] == 429
     assert mapper.describe(ValueError())[0] == 502
     assert mapper.response(ValueError()).status_code == 502
 
@@ -857,10 +854,10 @@ def test_miniapp_falls_back_instead_of_raising_nameerror():
 def test_miniapp_store_validates_and_cycles_preferences():
     miniapp = importlib.import_module("pyUltroid.webserver.miniapp")
     store = miniapp.MiniAppStore(miniapp.MemoryStore(), None)
-    assert store.ui_state() == {"theme": "default", "cards": True, "buttons": "classic"}
+    assert store.ui_state() == {"theme": "default", "cards": True, "buttons": "styled"}
     assert store.cycle_theme() == "dark"
     assert store.cycle_theme() == "default"
-    assert store.cycle_buttons() == "styled"
+    assert store.cycle_buttons() == "classic"
     assert store.flip_cards() is False
     assert store.flip_cards() is True
 
@@ -914,9 +911,12 @@ def test_module_functions_delegate_to_the_classes():
     mods = modules()
     security = mods["security"]
     assert security.token_matches("a", "a") is True
-    assert security.extract_token(
-        types.SimpleNamespace(headers={}, query_params={"token": "t"})
-    ) == "t"
+    assert (
+        security.extract_token(
+            types.SimpleNamespace(headers={}, query_params={"token": "t"})
+        )
+        == "t"
+    )
 
     runner = mods["runner"]
     assert runner.make_server(object(), "127.0.0.1", 45992) is not None
@@ -989,6 +989,7 @@ def test_each_class_has_its_own_shape():
             if other is cls:
                 continue
             assert not issubclass(cls, other), f"{cls} subclasses {other}"
+
 
 @NEEDS_FASTAPI
 def test_miniapp_store_adopts_the_live_udb(monkeypatch):

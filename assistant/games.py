@@ -6,14 +6,15 @@
 # <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
 
 """
-• `{i}akinator` | `/akinator`
-   Start akinator game from Userbot/Assistant
+{i}akinator | /akinator
+ Start akinator game from Userbot/Assistant
 
-• `/startgame`
-   Open Portal for Games
+/startgame
+ Open Portal for Games
 """
 
 import asyncio
+import html
 import re
 import operator
 import uuid
@@ -34,19 +35,18 @@ from telethon.tl.types import InputMediaPoll, Poll, PollAnswer, UpdateMessagePol
 
 from pyUltroid._misc._decorators import ultroid_cmd
 from custom.tg import ikm
-from custom.fmt import fmtmsg
+from custom.fmt import fmtmsg, rawhtml
 
 from . import *  # Ensure this import matches your project structure
 from ._cbs import cb, cb_str, cb_exact_pattern, cb_pattern
-from pyUltroid.fns import fns
 from pyUltroid.fns import fns
 
 games = {}
 aki_photo = "https://graph.org/file/3cc8825c029fd0cab9edc.jpg"
 
-#: ``assistant:games:aki:<chat>:<mid>`` — reused verbatim as both the inline
-#: query text (``eiagx``/``akina``) and the resulting button/callback data
-#: (``doai``), so it's built once here rather than three separate times.
+#: assistant:games:aki:<chat>:<mid>   reused verbatim as both the inline
+#: query text (eiagx/akina) and the resulting button/callback data
+#: (doai), so it's built once here rather than three separate times.
 AKI_PREFIX = cb_str("assistant", "games", "aki")
 AKI_CALLBACK_PATTERN = cb_pattern("assistant", "games", "aki")
 AKI_TEXT_PATTERN = re.compile(re.escape(AKI_PREFIX) + r":(.*)")
@@ -55,9 +55,15 @@ TRIVIA_CAT = cb("assistant", "games", "trivia", "cat")
 DELIT = cb("assistant", "games", "delit")
 
 
+def _akinator_result(name, description):
+    """Build a safe HTML result without interpreting provider text as markup."""
+    body = f"It's <b>{html.escape(str(name))}</b>\n{html.escape(str(description))}"
+    return fmtmsg("Akinator Result", msgs=rawhtml(body))
+
+
 def _aka_buttons(ch, mid):
-    """Akinator answer keyboard for game ``(ch, mid)`` (used by both the
-    first question in ``doai`` and every follow-up in ``okah``)."""
+    """Akinator answer keyboard for game (ch, mid) (used by both the
+    first question in doai and every follow-up in okah)."""
 
     def _a(ans):
         return cb("assistant", "games", "aka", ch, mid, ans)
@@ -65,8 +71,8 @@ def _aka_buttons(ch, mid):
     return ikm(
         [
             [
-                ("Yes", _a("Yes"), "success"),
-                ("No", _a("No"), "danger"),
+                ("Yes", _a("Yes"), "primary"),
+                ("No", _a("No"), "primary"),
                 ("Idk", _a("Idk"), "primary"),
             ],
             [
@@ -74,7 +80,7 @@ def _aka_buttons(ch, mid):
                 ("Probably Not", _a("Probably Not"), "primary"),
             ],
         ],
-        icon=True,
+        icon=False,
     )
 
 
@@ -93,7 +99,7 @@ async def akina(e):
         await asst.send_file(
             e.chat_id,
             aki_photo,
-            buttons=ikm([[(get_string("aki_2"), query, "primary")]], icon=True),
+            buttons=ikm([[(get_string("aki_2"), query, "primary")]], icon=False),
         )
     except Exception as er:
         akipyLOGS.error(f"Unexpected error: {er}")
@@ -118,7 +124,7 @@ async def doai(e):
         await games[ch][mid].start_game(child_mode=False)
         bts = _aka_buttons(ch, mid)
         await e.edit(
-            fmtmsg("Akinator 🤔", msgs=f"Q. {games[ch][mid].question}"),
+            fmtmsg("Akinator ", msgs=f"Q. {games[ch][mid].question}"),
             buttons=bts,
             parse_mode="html",
         )
@@ -145,16 +151,13 @@ async def okah(e):
         # Check for the final guess in the API response
         if gm.name_proposition and gm.description_proposition:
             gm.win = True
-            text = fmtmsg(
-                "Akinator Result 🎉",
-                msgs=f"It's <b>{gm.name_proposition}</b>\n{gm.description_proposition}",
-            )
+            text = _akinator_result(gm.name_proposition, gm.description_proposition)
             await e.edit(text, file=gm.photo, parse_mode="html")
         else:
             # Game is not won yet, continue asking questions
             buttons = _aka_buttons(ch, mid)
             await e.edit(
-                fmtmsg("Akinator 🤔", msgs=gm.question),
+                fmtmsg("Akinator ", msgs=gm.question),
                 buttons=buttons,
                 parse_mode="html",
             )
@@ -162,12 +165,16 @@ async def okah(e):
     except KeyError:
         await e.answer(get_string("aki_3"))
     except Exception as ex:
-        akipyLOGS.error(f"An unexpected error occurred: {ex}")
+        akipyLOGS.exception(f"An unexpected error occurred: {ex}")
+        try:
+            await e.answer("The game could not continue. Start a new game.", alert=True)
+        except Exception:
+            pass
 
 
 @in_pattern(AKI_TEXT_PATTERN, owner=True)
 async def eiagx(e):
-    bts = ikm([[(get_string("aki_2"), e.text, "primary")]], icon=True)
+    bts = ikm([[(get_string("aki_2"), e.text, "primary")]], icon=False)
     ci = types.InputWebDocument(aki_photo, 0, "image/jpeg", [])
     ans = [
         await e.builder.article(
@@ -194,13 +201,13 @@ GIMAGES = [
 async def magic(event):
     buttons = ikm(
         [
-            [("Trivia Quiz 🎯", TRIVIA_CAT, "primary")],
-            [("Cancel ❌", DELIT, "danger")],
+            [("Trivia Quiz ", TRIVIA_CAT, "primary")],
+            [("Cancel ", DELIT, "danger")],
         ],
-        icon=True,
+        icon=False,
     )
     await event.reply(
-        fmtmsg("SarahUB Games 🎮", msgs=get_string("games_1")),
+        fmtmsg("SarahUB Games ", msgs=get_string("games_1")),
         file=choice(GIMAGES),
         buttons=buttons,
         parse_mode="html",
@@ -269,36 +276,36 @@ async def choose_cata(event):
             buttons_data = list(zip(btt[::2], btt[1::2]))
             if len(btt) % 2 == 1:
                 buttons_data.append([btt[-1]])
-            buttons_data.append([("Cancel ❌", DELIT, "danger")])
-            buttons = ikm(buttons_data, icon=True)
+            buttons_data.append([("Cancel ", DELIT, "danger")])
+            buttons = ikm(buttons_data, icon=False)
             TR_BTS.update({"category": buttons})
-        text = fmtmsg("Trivia Setup 🎯", msgs=get_string("games_2"))
+        text = fmtmsg("Trivia Setup ", msgs=get_string("games_2"))
     elif action == "diff":
         cat = rest[0]
         buttons = ikm(
             [
                 [
                     (
-                        "Easy 😄",
+                        "Easy ",
                         cb("assistant", "games", "trivia", "num", cat, "Easy"),
-                        "success",
+                        "primary",
                     ),
                     (
-                        "Medium 😐",
+                        "Medium ",
                         cb("assistant", "games", "trivia", "num", cat, "Medium"),
                         "primary",
                     ),
                     (
-                        "Hard 💀",
+                        "Hard ",
                         cb("assistant", "games", "trivia", "num", cat, "Hard"),
-                        "danger",
+                        "primary",
                     ),
                 ],
-                [("« Bᴀᴄᴋ", TRIVIA_CAT, "danger")],
+                [("Back", TRIVIA_CAT, None)],
             ],
-            icon=True,
+            icon=False,
         )
-        text = fmtmsg("Difficulty Selection ⚙️", msgs=get_string("games_3"))
+        text = fmtmsg("Difficulty Selection ", msgs=get_string("games_3"))
     elif action == "num":
         cat, diff = rest
         buttons = ikm(
@@ -311,11 +318,11 @@ async def choose_cata(event):
                     )
                     for i in range(10, 70, 20)
                 ],
-                [("« Bᴀᴄᴋ", TRIVIA_CAT, "danger")],
+                [("Back", TRIVIA_CAT, None)],
             ],
-            icon=True,
+            icon=False,
         )
-        text = fmtmsg("Number of Questions 📝", msgs=get_string("games_4"))
+        text = fmtmsg("Number of Questions ", msgs=get_string("games_4"))
     elif action == "time":
         cat, diff, num = rest
         buttons = ikm(
@@ -328,28 +335,28 @@ async def choose_cata(event):
                     )
                     for i in [10, 30, 60, 120]
                 ],
-                [("« Bᴀᴄᴋ", TRIVIA_CAT, "danger")],
+                [("Back", TRIVIA_CAT, None)],
             ],
-            icon=True,
+            icon=False,
         )
-        text = fmtmsg("Time Limit per Question ⏰", msgs=get_string("games_5"))
+        text = fmtmsg("Time Limit per Question ", msgs=get_string("games_5"))
     elif action == "start":
         cat, le, nu, in_ = rest
         chat = event.chat_id
         msg = await event.edit(
-            fmtmsg("Trivia Quiz 🎯", msgs=get_string("games_6").format(le, nu)),
+            fmtmsg("Trivia Quiz ", msgs=get_string("games_6").format(le, nu)),
             parse_mode="html",
         )
         for i in reversed(range(5)):
             msg = await msg.edit(
                 buttons=ikm(
-                    [[(f"{i} ⏰", cb("assistant", "games", "ctdown", i), "danger")]],
-                    icon=True,
+                    [[(f"{i}", cb("assistant", "games", "ctdown", i), None)]],
+                    icon=False,
                 )
             )
             await asyncio.sleep(1)
         await msg.edit(
-            msg.text + "\n\n• Send /cancel to stop the Quiz...", buttons=None
+            msg.text + "\n\n  Send /cancel to stop the Quiz...", buttons=None
         )
         qsss = await fns.async_searcher(
             f"https://opentdb.com/api.php?amount={nu}&category={cat}&difficulty={le.lower()}",
@@ -392,7 +399,7 @@ async def choose_cata(event):
         if not TRIVIA_CHATS[chat]:
             await event.respond(
                 fmtmsg(
-                    "Quiz Finished 🎯",
+                    "Quiz Finished ",
                     msgs="No-One Got Any Score in the Quiz!\nBetter Luck Next Time!",
                 ),
                 parse_mode="html",
@@ -413,7 +420,7 @@ async def choose_cata(event):
                 LBD[get_display_name(user_entity)] = f"{user_score} Points"
 
             await event.respond(
-                fmtmsg("🎯 Quiz Scoreboard", data=LBD),
+                fmtmsg(" Quiz Scoreboard", data=LBD),
                 parse_mode="html",
             )
         del TRIVIA_CHATS[chat]

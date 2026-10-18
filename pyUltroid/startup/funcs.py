@@ -35,7 +35,6 @@ from telethon.utils import get_peer_id
 from decouple import config, RepositoryEnv
 
 from .. import LOGS, ULTConfig
-from ..fns import fns
 
 
 def update_envs():
@@ -45,11 +44,16 @@ def update_envs():
     _envs = [*list(os.environ)]
     if ".env" in os.listdir("."):
         [_envs.append(_) for _ in list(RepositoryEnv(config._find_file(".")).data)]
+    always_sync = {"LOG_CHANNEL", "BOT_TOKEN", "BOTMODE", "DUAL_MODE", "language"}
+    db_keys = None
     for envs in _envs:
-        if (
-            envs in ["LOG_CHANNEL", "BOT_TOKEN", "BOTMODE", "DUAL_MODE", "language"]
-            or envs in udB.keys()
-        ):
+        if envs in always_sync:
+            should_sync = True
+        else:
+            if db_keys is None:
+                db_keys = set(udB.keys())
+            should_sync = envs in db_keys
+        if should_sync:
             if _value := os.environ.get(envs):
                 udB.set_key(envs, _value)
             else:
@@ -58,6 +62,7 @@ def update_envs():
 
 async def startup_stuff():
     from .. import udB
+    from ..fns import fns
 
     x = ["resources/auth", "resources/downloads"]
     for x in x:
@@ -181,6 +186,7 @@ async def autobot():
 
 async def autopilot():
     from .. import asst, udB, ultroid_bot
+    from ..fns import fns
 
     channel = udB.get_key("LOG_CHANNEL")
     new_channel = None
@@ -326,6 +332,7 @@ async def autopilot():
 
 async def customize():
     from .. import asst, udB, ultroid_bot
+    from ..fns import fns
 
     rem = None
     try:
@@ -431,53 +438,147 @@ async def plug(plugin_channels):
             LOGS.exception(er)
 
 
-def _runtime_stats() -> str:
-    from .. import start_time
-    from ..dB._core import HELP, LIST
-    from ..fns import fns
+def _deployment_inventory() -> dict[str, list[list[str]]]:
+    """Snapshot live command, plugin, module, client, and PMF registries."""
+    from .._core.internals import count_handlers
+    from ..startup.patching import get_patch_registry
+    from ..ultroid import core
 
-    patches = 0
-    rich = False
-    try:
-        from .._core.entities import RICH_MD
-        from ..startup.patching import get_patch_registry
+    from ..dB._core import LIST, LOADED
 
-        patches = len(get_patch_registry().list_patches())
-        rich = bool(getattr(RICH_MD, "available", False))
-    except Exception:
-        pass
+    active = core.registry.get_active() if core.registry is not None else ()
+    failed = core.registry.get_by_status("errored") if core.registry is not None else ()
+    plugins = addons = other_modules = 0
+    plugin_handlers = addon_handlers = other_handlers = 0
+    pmf_entries: list[dict] = []
+    for manifest in active:
+        path = str(getattr(manifest, "path", "") or "").replace("\\", "/")
+        parts = set(path.strip("/").split("/"))
+        name = str(getattr(manifest, "name", ""))
+        handler_count = int(getattr(manifest, "handler_count", 0) or 0)
+        if "addons" in parts or name.startswith("addons:"):
+            addons += 1
+            addon_handlers += handler_count
+        elif "plugins" in parts or name.startswith("plugins:"):
+            plugins += 1
+            plugin_handlers += handler_count
+        else:
+            other_modules += 1
+            other_handlers += handler_count
+        try:
+            pmf_entries.extend(core.manifest.get_entries(name))
+        except Exception:
+            pass
 
-    commands = sum(len(v) for v in LIST.values())
-    rows = [
-        ("Metric", "Value"),
-        ("Total Plugins", str(len(HELP.get("Official", [])))),
-        ("Total Addons", str(len(HELP.get("Addons", [])))),
-        ("Registered Commands", str(commands)),
-        ("Patches", str(patches)),
-        ("Time Took", fns.time_formatter((time.time() - start_time) * 1000)),
-    ]
-    if rich:
-        header = "| " + " | ".join(rows[0]) + " |"
-        sep = "| " + " | ".join("---" for _ in rows[0]) + " |"
-        return "\n".join([header, sep] + [f"| {' | '.join(r)} |" for r in rows[1:]])
-    width = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
-    body = "\n".join(
-        "  ".join(r[i].ljust(width[i]) for i in range(len(r))) for r in rows
+    command_groups = set(LIST) | set(LOADED)
+    command_patterns = sum(len(items) for items in LIST.values())
+    clients = tuple(getattr(core, "clients", ()) or ())
+    unique_clients = tuple(
+        {id(client): client for client in clients if client is not None}.values()
     )
-    return f"```\n{body}\n```"
+    event_handlers = 0
+    for client in unique_clients:
+        try:
+            event_handlers += count_handlers(client)
+        except Exception:
+            continue
+
+    module_status = {}
+    if core.modules is not None:
+        try:
+            module_status = core.modules.status()
+        except Exception:
+            module_status = {}
+    runtime_modules = module_status.get("modules", {})
+    runtime_module_handlers = sum(
+        int(item.get("handlers", 0) or 0) for item in runtime_modules.values()
+    )
+    listeners = int(module_status.get("listeners", 0) or 0)
+    applied_patches = len(get_patch_registry().applied_patches())
+
+    pmf_toggles = [entry for entry in pmf_entries if entry.get("type") == "toggle"]
+    pmf_actions = [entry for entry in pmf_entries if entry.get("type") == "action"]
+    pmf_buttons = [
+        entry for entry in pmf_entries if entry.get("type") == "manifest_button"
+    ]
+    pmf_callbacks = 0
+    for entry in pmf_entries:
+        key = entry.get("toggle_key")
+        if not key:
+            continue
+        try:
+            if core.manifest.get_handler(key) is not None:
+                pmf_callbacks += 1
+        except Exception:
+            continue
+
+    roles = tuple(core.available_roles()) if core.master is not None else ()
+    runtime_rows = [
+        ["Runtime area", "Count", "Handlers / detail"],
+        ["Plugins", str(plugins), str(plugin_handlers)],
+        ["Add-ons", str(addons), str(addon_handlers)],
+        ["Other modules", str(other_modules), str(other_handlers)],
+        ["Failed module loads", str(len(failed)), "-"],
+        [
+            "Command patterns",
+            str(command_patterns),
+            f"in {len(command_groups)} modules",
+        ],
+        ["Telegram clients", str(len(unique_clients)), ", ".join(roles) or "none"],
+        ["Telegram event handlers", str(event_handlers), "registered callbacks"],
+        ["Runtime modules", str(len(runtime_modules)), str(runtime_module_handlers)],
+        ["Runtime listeners", str(listeners), "registered callbacks"],
+        ["Applied patches", str(applied_patches), "currently active"],
+    ]
+    pmf_rows = [
+        ["PMF feature", "Registered"],
+        ["Toggles", str(len(pmf_toggles))],
+        ["Actions", str(len(pmf_actions))],
+        ["Custom menu buttons", str(len(pmf_buttons))],
+        ["Registered callbacks", str(pmf_callbacks)],
+    ]
+    return {"runtime": runtime_rows, "pmf": pmf_rows}
 
 
-def _rich_parse_mode():
-    try:
-        from .._core.entities import RICH_MD
+def _deployment_notice_blocks(
+    *,
+    assistant_username: str,
+    version: str,
+    warning: str | None = None,
+    inventory: dict[str, list[list[str]]] | None = None,
+):
+    """Build the startup notice from distinct native RichMessage blocks."""
+    from .._core.richmsg import RichBlocks
 
-        return RICH_MD if getattr(RICH_MD, "available", False) else None
-    except Exception:
-        return None
+    inventory = inventory or _deployment_inventory()
+    notice = RichBlocks()
+    notice.header("SarahUB is ready")
+    notice.paragraph("Startup finished. Your userbot is online and ready for commands.")
+    notice.list([f"Assistant bot: @{assistant_username}", f"Version: {version}"])
+    notice.header("Runtime inventory", level=2)
+    notice.table(inventory.get("runtime", []), is_compact=True)
+    notice.header("Plugin Manifest Framework", level=2)
+    notice.table(inventory.get("pmf", []), is_compact=True)
+    if warning:
+        notice.paragraph(f"Action needed: {warning}")
+    return notice
+
+
+def _record_deploy_notice_sent(database, message, *, initial_deploy: bool) -> bool:
+    """Persist notice state only after a Telegram message was returned."""
+    if message is None:
+        return False
+    message_id = getattr(message, "id", None)
+    if message_id is not None and not getattr(message, "media", None):
+        database.set_key("LAST_UPDATE_LOG_SPAM", message_id)
+    if initial_deploy:
+        database.set_key("INIT_DEPLOY", "Done")
+    return True
 
 
 async def ready():
     from .. import asst, udB, ultroid_bot
+    from ..fns import fns
     from custom.tg import ikm
 
     if asst and ultroid_bot and asst != ultroid_bot:
@@ -494,73 +595,37 @@ async def ready():
         return
 
     spam_sent = None
-    stats_table = _runtime_stats()
-    parse_mode = _rich_parse_mode()
 
     from .._core._cbs import cb
-    from ..dB._core import HELP, LIST
     from ..version import ultroid_version
 
+    initial_deploy = not udB.get_key("INIT_DEPLOY")
     bot_note = ""
-    if not udB.get_key("INIT_DEPLOY"):
-        bot_in_channel = False
-        if asst and asst != ultroid_bot:  # user + bot mode
+    if initial_deploy:
+        if asst and asst != ultroid_bot:
             try:
                 await ultroid_bot.get_permissions(int(chat_id), asst.me.username)
-                bot_in_channel = True
             except Exception:
-                pass
-        if not bot_in_channel:
-            bot_note = (
-                "⚠️ **Assistant** @{bot} was **not** added to this channel  -  "
-                "the invite failed (the bot account may need to be added "
-                "manually by a channel admin). Log forwarding and inline "
-                "callbacks will not work until the bot joins."
-            ).format(bot=asst.me.username)
+                bot_note = (
+                    f"Assistant @{asst.me.username} could not be confirmed in "
+                    "the log channel. Add it manually to enable log forwarding "
+                    "and inline callbacks."
+                )
 
-    n_plugins = len(HELP.get("Official", []))
-    n_addons = len(HELP.get("Addons", []))
-    commands = sum(len(v) for v in LIST.values())
-    try:
-        from ..ultroid import core
-
-        pmf_count = len(getattr(core.manifest, "_entries", {}))
-    except Exception:
-        pmf_count = 0
-
-    info_lines = [
-        f"• __UserMode:__ {fns.inline_mention(ultroid_bot.me)}",
-        f"• __Assistant:__ @{asst.me.username}",
-        f"• __Version:__ `{ultroid_version}`",
-    ]
-    alert_note = bot_note or "• All subsystems nominal  -  no alerts."
-    math_block = (
-        f"`plugins({n_plugins}) + addons({n_addons}) = {n_plugins + n_addons} modules`\n"
-        f"`handlers = {commands} · pmf = {pmf_count}`"
-    )
-    MSG = "\n".join(
-        [
-            "> **Ultroid is UP and running!**",
-            "",
-            "__ℹ️ Info:__",
-            *info_lines,
-            "",
-            "__⚠️ Alert:__",
-            alert_note,
-            "",
-            "__🧮 Registry:__",
-            math_block,
-            "",
-            stats_table,
-        ]
+    assistant_username = getattr(getattr(asst, "me", None), "username", None)
+    MSG = _deployment_notice_blocks(
+        assistant_username=assistant_username or "not configured",
+        version=ultroid_version,
+        warning=bot_note or None,
     )
 
-    if not udB.get_key("INIT_DEPLOY"):  # Detailed Message at Initial Deploy
-        PHOTO = "https://graph.org/file/54a917cc9dbb94733ea5f.jpg"
-        BTTS = ikm([("start", cb("assistant", "initial", "next", 2), "success", "go")])
-        udB.set_key("INIT_DEPLOY", "Done")
+    if initial_deploy:  # Detailed Message at Initial Deploy
+        BTTS = ikm(
+            [("Open setup guide", cb("assistant", "initial", "next", 2), "primary")],
+            icon=False,
+        )
     else:
-        BTTS, PHOTO = None, None
+        BTTS = None
         prev_spam = udB.get_key("LAST_UPDATE_LOG_SPAM")
         if prev_spam:
             try:
@@ -579,19 +644,27 @@ async def ready():
         )
     else:
         LOGS.info("ready(): sending deploy message to LOG_CHANNEL via assistant bot.")
-        send_kwargs = {"file": PHOTO, "buttons": BTTS}
-        if parse_mode is not None:
-            send_kwargs["parse_mode"] = parse_mode
         try:
-            spam_sent = await asst.send_message(chat_id, MSG, **send_kwargs)
+            from .._core.richmsg import send_rich
+
+            spam_sent = await send_rich(
+                asst,
+                chat_id,
+                MSG,
+                buttons=BTTS,
+                link_preview=False,
+            )
             LOGS.info(
                 "ready(): deploy message sent via assistant (msg_id=%s).", spam_sent.id
             )
         except Exception as ef:
             LOGS.exception(ef)
 
-    if spam_sent and not spam_sent.media:
-        udB.set_key("LAST_UPDATE_LOG_SPAM", spam_sent.id)
+    if spam_sent:
+        try:
+            _record_deploy_notice_sent(udB, spam_sent, initial_deploy=initial_deploy)
+        except Exception:  # noqa: BLE001 - notice was sent; persistence must not block startup
+            LOGS.exception("Could not persist deploy-notice state after delivery")
 
 
 async def WasItRestart(udb):

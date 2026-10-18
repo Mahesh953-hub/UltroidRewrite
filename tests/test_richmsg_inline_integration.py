@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from telethon import types as tl_types
 
 import pyUltroid._core.inlineresults as inline
-import pyUltroid._core.richmsg as richmsg
+from pyUltroid._core import richmsg
+from pyUltroid._core.events import InlineResultBuilder
 from pyUltroid.universal.tl import capabilities
 
 
@@ -42,14 +45,6 @@ class TextMessage(Payload):
     pass
 
 
-class Parser:
-    available = True
-
-    @staticmethod
-    def parse(text, mode=None):
-        return text, [Payload(kind="entity", mode=mode)]
-
-
 class Client:
     def build_reply_markup(self, buttons):
         return ("markup", buttons)
@@ -65,37 +60,40 @@ def schema(monkeypatch):
         InputBotInlineMessageText=TextMessage,
     )
     monkeypatch.setattr(inline, "_types", types)
-    monkeypatch.setattr(inline, "_RICH_MD", Parser())
     return types
 
 
-def make_results():
+def make_event():
     # A supplied builder keeps this test at the wrapper integration boundary
     # without depending on Telethon's full InlineBuilder/client implementation.
     class Builder:
         _client = Client()
 
         async def article(self, **kwargs):
-            message, entities = Parser.parse(kwargs["text"], mode=kwargs["parse_mode"])
-            return InlineResult(
-                id=kwargs["id"],
-                type="article",
-                title=kwargs["title"],
-                description=kwargs["description"],
-                url=kwargs["url"],
-                send_message=TextMessage(
-                    message=message,
-                    entities=entities,
-                    reply_markup=("markup", kwargs["buttons"]),
-                ),
-            )
+            raise AssertionError("plain InlineBuilder.article must never be used")
 
-    return inline.InlineResults(SimpleNamespace(builder=Builder()))
+    class Event:
+        def __init__(self):
+            self.builder = Builder()
+            self.answers = []
+
+        async def answer(self, results, **kwargs):
+            self.answers.append((list(results), kwargs))
+            return results
+
+    return Event()
+
+
+def make_results():
+    return inline.InlineResults(make_event())
 
 
 @pytest.mark.parametrize(
     ("format", "payload_attr", "payload_cls"),
-    [("html", "html", RichHTML), ("markdown", "markdown", RichMarkdown)],
+    [
+        ("html", "html", tl_types.InputRichMessageHTML),
+        ("markdown", "markdown", tl_types.InputRichMessageMarkdown),
+    ],
 )
 def test_article_rich_native_wire_payload(schema, format, payload_attr, payload_cls):
     result = asyncio.run(
@@ -120,30 +118,147 @@ def test_article_rich_native_wire_payload(schema, format, payload_attr, payload_
     assert payload.rtl is True and payload.noautolink is True
 
 
-def test_article_rich_legacy_fallback_preserves_article_fields(schema):
-    result = asyncio.run(
-        make_results().article_rich(
-            "Title",
-            "*body*",
-            engine="legacy",
-            format="markdown",
-            id="legacy",
-            description="Desc",
-            url="https://x",
-            buttons="b",
-        )
+def test_article_rich_rejects_unverified_file_vectors(schema):
+    from telethon import types
+
+    photo = types.InputPhoto(id=12, access_hash=34, file_reference=b"ref")
+    markup = richmsg.RichMarkup(
+        '<p>Cover</p><img src="cover"/>',
+        "html",
+        (richmsg.RichFile("cover", photo),),
     )
-    assert isinstance(result, InlineResult)
-    assert result.id == "legacy" and result.title == "Title"
-    assert result.description == "Desc" and result.url == "https://x"
-    assert isinstance(result.send_message, TextMessage)
-    assert result.send_message.reply_markup == ("markup", "b")
-    assert result.send_message.message == r"\*body\*"
+    with pytest.raises(
+        ValueError,
+        match="RichMessage photo/document references are unsupported",
+    ):
+        asyncio.run(make_results().article_rich("Title", markup))
 
 
 def test_article_rich_validates_format(schema):
     with pytest.raises(ValueError, match="format must"):
         asyncio.run(make_results().article_rich("Title", "body", format="text"))
+
+
+def test_actual_event_builder_exposes_and_serializes_rich_articles(schema):
+    event = make_event()
+    builder = InlineResultBuilder(event)
+    assert callable(builder.article_rich)
+    result = asyncio.run(builder.article_rich("Title", "<b>rich body</b>", id="known"))
+    assert isinstance(result, InlineResult)
+    assert result.id == "known"
+    assert isinstance(result.send_message, InlineRich)
+    assert isinstance(result.send_message.rich_message, tl_types.InputRichMessageHTML)
+    assert result.send_message.rich_message.html == "<b>rich body</b>"
+    assert bytes(result)
+
+
+def test_event_builder_article_alias_also_uses_native_rich(schema):
+    event = make_event()
+    result = asyncio.run(
+        InlineResultBuilder(event).article(
+            title="Title", text="literal body", parse_mode=None
+        )
+    )
+    assert isinstance(result.send_message, InlineRich)
+    assert isinstance(result.send_message.rich_message, tl_types.InputRichMessageHTML)
+    assert result.send_message.rich_message.html == "literal body"
+
+
+def test_inline_error_notice_is_answered_as_a_native_rich_article(schema):
+    from pyUltroid._misc._assistant import _answer_inline_error
+
+    event = make_event()
+    asyncio.run(_answer_inline_error(event, "@bot failing-query", "Traceback line"))
+    result = event.answers[0][0][0]
+    assert isinstance(result, InlineResult)
+    assert isinstance(result.send_message, InlineRich)
+    payload = result.send_message.rich_message
+    assert isinstance(payload, tl_types.InputRichMessageHTML)
+    assert "@bot failing-query" in payload.html
+    assert "Traceback line" in payload.html
+
+
+def test_raw_inline_builder_articles_are_media_only():
+    root = Path(__file__).resolve().parents[1]
+    offenders = []
+    for source_root in (root / "plugins", root / "assistant", root / "pyUltroid"):
+        for path in source_root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            scopes = [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
+            for scope in scopes:
+                nodes = list(ast.walk(scope))
+                raw_builder_names = set()
+                for node in nodes:
+                    if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                        continue
+                    value = node.value
+                    is_raw_builder = (
+                        isinstance(value, ast.Attribute) and value.attr == "builder"
+                    ) or (
+                        isinstance(value, ast.Call)
+                        and isinstance(value.func, ast.Name)
+                        and value.func.id == "InlineBuilder"
+                    )
+                    if is_raw_builder:
+                        targets = (
+                            node.targets
+                            if isinstance(node, ast.Assign)
+                            else [node.target]
+                        )
+                        raw_builder_names.update(
+                            target.id
+                            for target in targets
+                            if isinstance(target, ast.Name)
+                        )
+                for node in nodes:
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    if not isinstance(func, ast.Attribute) or func.attr != "article":
+                        continue
+                    value = func.value
+                    raw_article = (
+                        (isinstance(value, ast.Attribute) and value.attr == "builder")
+                        or (
+                            isinstance(value, ast.Name)
+                            and value.id in raw_builder_names
+                        )
+                        or (
+                            isinstance(value, ast.Call)
+                            and isinstance(value.func, ast.Name)
+                            and value.func.id == "InlineBuilder"
+                        )
+                    )
+                    if raw_article and not any(
+                        keyword.arg == "include_media" for keyword in node.keywords
+                    ):
+                        offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert not offenders, (
+        "text-only inline articles must use the rich-message builder; raw article "
+        "calls are permitted only for media results: " + ", ".join(offenders)
+    )
+
+
+def test_empty_query_alive_card_uses_the_native_rich_article_path():
+    root = Path(__file__).resolve().parents[1]
+    source = root / "plugins" / "_inline.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    handler = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "inline_alive"
+    )
+    calls = [
+        node.func.attr
+        for node in ast.walk(handler)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    ]
+    assert "article_rich" in calls
+    assert "photo" not in calls
 
 
 #: module names the ``_load_inline_stuff`` harness stubs into ``sys.modules``;
@@ -237,10 +352,17 @@ def test_rich_article_attaches_media_and_refinalizes_id(monkeypatch):
             self.kwargs = (title, payload, kwargs)
             return self.result
 
+    file_ref = richmsg.RichFile(
+        "cover",
+        tl_types.InputPhoto(id=90, access_hash=91, file_reference=b"ref"),
+    )
+    expected_markup = richmsg.RichMarkup(
+        '<p>rendered</p><img src="cover"/>', "html", (file_ref,)
+    )
     monkeypatch.setattr(
         stuff,
-        "rich_message_html",
-        lambda blocks, rtl=False: SimpleNamespace(html="<p>rendered</p>"),
+        "rich_markup_from_blocks",
+        lambda blocks, format: expected_markup,
     )
     target = Results()
     result = asyncio.run(
@@ -249,13 +371,10 @@ def test_rich_article_attaches_media_and_refinalizes_id(monkeypatch):
         )
     )
     title, payload, kwargs = target.kwargs
-    assert title == "Title" and payload == "<p>rendered</p>"
-    assert kwargs["engine"] == "rich" and kwargs["format"] == "html"
-    assert (
-        kwargs["is_premium"] is False
-        and kwargs["is_bot"] is True
-        and kwargs["rtl"] is True
-    )
+    assert title == "Title" and isinstance(payload, richmsg.RichMarkup)
+    assert payload == expected_markup
+    assert kwargs["format"] == "html" and kwargs["rtl"] is True
+    assert not {"engine", "is_bot", "is_premium"}.intersection(kwargs)
     assert result.thumb == "thumb" and result.content == "content"
     # `_rich_article` hashes the mutated result while its ID is still empty.
     expected = Result()
@@ -275,7 +394,9 @@ def test_rich_article_keeps_explicit_id_when_media_changes(monkeypatch):
             return Result()
 
     monkeypatch.setattr(
-        stuff, "rich_message_html", lambda blocks, rtl=False: SimpleNamespace(html="x")
+        stuff,
+        "rich_markup_from_blocks",
+        lambda blocks, format: richmsg.RichMarkup("x", format),
     )
     result = asyncio.run(
         stuff._rich_article(Results(), "Title", object(), id="given", thumb="thumb")
@@ -283,18 +404,35 @@ def test_rich_article_keeps_explicit_id_when_media_changes(monkeypatch):
     assert result.id == "given" and result.thumb == "thumb"
 
 
-def test_pinned_layer_228_capability_contract(schema):
-    # Changed contract must stay enabled even if callers do not feature-probe the schema.
-    assert (
-        capabilities(types_module=SimpleNamespace(), functions_module=None).rich_message
-        is True
+def test_pinned_layer_230_rich_message_contract(schema):
+    from telethon import __version__ as telethon_version
+    from telethon.tl.alltlobjects import LAYER
+
+    assert telethon_version == "1.45.0"
+    assert LAYER == 230
+    assert not hasattr(
+        capabilities(types_module=SimpleNamespace(), functions_module=None),
+        "rich_message",
     )
-    assert inline.has("article_rich") is True
-    payload = richmsg.rich_message(
-        "plain", engine="rich", format="html", is_bot=False, is_premium=False
-    )
+    assert not hasattr(inline.InlineResults, "has")
+    payload = richmsg.rich_message("plain", format="html")
     # The installed pinned fork supplies the actual class; this verifies current runtime construction.
     from telethon.tl import types
 
     assert isinstance(payload, types.InputRichMessageHTML)
-    assert payload.html == "<p>plain</p>"
+    assert payload.html == "plain"
+
+
+def test_article_rich_rejects_media_inside_prebuilt_native_payload(schema):
+    photo = tl_types.InputPhoto(id=1, access_hash=2, file_reference=b"ref")
+    rich_file = tl_types.InputRichFilePhoto(id="cover", photo=photo)
+    payload = tl_types.InputRichMessageHTML(
+        html='<img src="cover"/>',
+        files=[rich_file],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="RichMessage photo/document references are unsupported",
+    ):
+        asyncio.run(make_results().article_rich("Title", payload))

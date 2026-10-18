@@ -30,11 +30,11 @@ Two things earlier versions of this scan got wrong, both fixed here:
    whose body is just ``return <core-func>(<literal-or-forwarded-args>)``)
    and builds a *template* for it, so a call like ``_tok("taglog")`` is
    understood as equivalent to
-   ``cb("assistant", "cbstuffs", "taglog")``.
+   ``cb("assistant", "callbacks", "taglogger")``.
 
 2. **Prefix-sharing is not compatibility.** Comparing only the first two
    literal args ("namespace:name") means an emitter
-   ``assistant:cbstuffs:foo`` and a handler ``assistant:cbstuffs:bar`` —
+   ``assistant:callbacks:foo`` and a handler ``assistant:callbacks:bar`` —
    totally unrelated buttons/handlers that happen to share a namespace —
    would count as "matched". Instead, every emitter/handler call is
    resolved into a full token *spec*: an ordered tuple of segments, each
@@ -75,6 +75,7 @@ ASSISTANT_DIR = ROOT / "assistant"
 CROSS_BOUNDARY_FILES = (
     ROOT / "plugins" / "_inline.py",
     ROOT / "plugins" / "_help.py",
+    ROOT / "assistant" / "manager" / "_help.py",
     ROOT / "plugins" / "_ultroid.py",
     ROOT / "pyUltroid" / "fns" / "admins.py",
     ROOT / "pyUltroid" / "startup" / "funcs.py",
@@ -456,13 +457,13 @@ def test_local_wrapper_aliases_are_resolved():
     """
     rendered_emitted = {e.render() for e in EMITTED}
     rendered_handled = {e.render() for e in HANDLED}
-    # callbackstuffs.py: _tok("taglog") / _handler("taglog")
-    assert "assistant:cbstuffs:taglog" in rendered_emitted
-    assert "assistant:cbstuffs:taglog" in rendered_handled
-    # callbackstuffs.py: _menu("otvars")
-    assert "assistant:cbstuffs:menu:otvars" in rendered_emitted
+    # callbackstuffs.py: _tok("taglogger") / _handler("taglogger")
+    assert "assistant:callbacks:taglogger" in rendered_emitted
+    assert "assistant:callbacks:taglogger" in rendered_handled
+    # callbackstuffs.py: _menu("othervars")
+    assert "assistant:callbacks:menu:othervars" in rendered_emitted
     # start.py: _cbstuffs_menu("apiset")
-    assert "assistant:cbstuffs:menu:apiset" in rendered_emitted
+    assert "assistant:callbacks:menu:apiset" in rendered_emitted
 
 
 def test_every_emitted_prefix_has_a_handler():
@@ -493,7 +494,7 @@ def test_known_namespaces_are_present():
     expected = {
         "help:manager",
         "help:Admintools",
-        "assistant:cbstuffs",
+        "assistant:callbacks",
         "assistant:games",
         "assistant:initial",
         "assistant:lang",
@@ -506,9 +507,8 @@ def test_known_namespaces_are_present():
 
 
 def test_cross_boundary_tokens_are_colon_migrated_and_balanced():
-    """The six legacy cross-boundary tokens (``sndplug_``, ``uh_``, ``mngbtn``,
-    ``open``, ``cc_``, ``initft_2``) are now fully migrated to the colon model.
-    The old raw tokens must no longer appear as ``namespace:name`` prefixes,
+    """The five current cross-boundary routes are in the colon model.
+    The retired raw tokens must no longer appear as ``namespace:name`` prefixes,
     and every migrated prefix must have *both* an emitter and a handler in the
     (now expanded) assistant/ + plugins/ + pyUltroid scan. The pair-balance
     itself is enforced by ``test_every_emitted_prefix_has_a_handler`` /
@@ -516,11 +516,10 @@ def test_cross_boundary_tokens_are_colon_migrated_and_balanced():
     silent re-literalization can't slip through.
     """
     migrated = {
-        "sndplug_": ("assistant:inline:sndplug",),
-        "uh_": ("assistant:inline:uh",),
+        "sndplug_": ("assistant:inline:send_plugin",),
         "mngbtn": ("help:manager:mngbtn",),
         "open": ("assistant:inline:main",),
-        "cc_": ("assistant:admins:cc",),
+        "cc_": ("assistant:admins:admin_verify",),
         "initft_2": (
             "assistant:initial",
         ),  # served by PAGE_PATTERN's next:/prev: handler

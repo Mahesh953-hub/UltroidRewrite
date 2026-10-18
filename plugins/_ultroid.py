@@ -5,6 +5,8 @@
 # PLease read the GNU Affero General Public License in
 # <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
 
+import html
+
 from telethon.errors import (
     BotMethodInvalidError,
     ChatSendInlineForbiddenError,
@@ -15,7 +17,7 @@ from custom.tg import ikm
 
 from pyUltroid._core._cbs import cb
 
-from . import LOG_CHANNEL, LOGS, Button, asst, eor, get_string, ultroid_cmd
+from . import HNDLR, LOG_CHANNEL, LOGS, Button, asst, eor, get_string, ultroid_cmd
 
 REPOMSG = """
 • **ULTROID USERBOT** •\n
@@ -37,9 +39,35 @@ RP_BUTTONS = ikm(
     ],
 )
 
-ULTSTRING = """🎇 **Thanks for Deploying Ultroid Userbot!**
+ULTSTRING = (
+    "<b>Ultroid is ready</b>\n\n"
+    "Open this guide for the first steps, useful commands, and support links."
+)
 
-• Here, are the Some Basic stuff from, where you can Know, about its Usage."""
+DEPLOYMENT_FALLBACK = (
+    "<b>Ultroid is ready</b>\n\n"
+    f"Start with <code>{html.escape(HNDLR)}help</code> to browse commands, "
+    f"or <code>{html.escape(HNDLR)}cmds</code> for the complete command index.\n\n"
+    '<a href="https://t.me/UltroidSupportChat">Support</a>'
+)
+
+
+async def _send_fallback_guide(client, target):
+    """Send a usable text guide when the bot cannot deliver the paged card."""
+    try:
+        return await client.send_file(
+            target,
+            file="https://graph.org/file/54a917cc9dbb94733ea5f.jpg",
+            caption=DEPLOYMENT_FALLBACK,
+            parse_mode="html",
+        )
+    except Exception:
+        return await client.send_message(
+            target,
+            DEPLOYMENT_FALLBACK,
+            parse_mode="html",
+            link_preview=False,
+        )
 
 
 @ultroid_cmd(
@@ -65,11 +93,43 @@ async def repify(e):
 @ultroid_cmd(pattern="ultroid$")
 async def useUltroid(rs):
     button = ikm([("Start", cb("assistant", "initial", "next", 2), "success")])
-    msg = await asst.send_message(
-        LOG_CHANNEL,
-        ULTSTRING,
-        file="https://graph.org/file/54a917cc9dbb94733ea5f.jpg",
-        buttons=button,
-    )
+    target = LOG_CHANNEL or rs.chat_id
+    try:
+        msg = await asst.send_file(
+            target,
+            file="https://graph.org/file/54a917cc9dbb94733ea5f.jpg",
+            caption=ULTSTRING,
+            buttons=button,
+            parse_mode="html",
+        )
+    except Exception as exc:
+        LOGS.warning(
+            "Setup guide could not be sent by the assistant bot (%s); trying the user client.",
+            exc.__class__.__name__,
+        )
+        try:
+            msg = await _send_fallback_guide(rs.client, target)
+        except Exception as fallback_exc:
+            if target != rs.chat_id:
+                try:
+                    msg = await _send_fallback_guide(rs.client, rs.chat_id)
+                except Exception as final_exc:
+                    LOGS.exception(final_exc)
+                    return await eor(
+                        rs,
+                        "Could not send the setup guide. Check chat access and try again.",
+                    )
+            else:
+                LOGS.exception(fallback_exc)
+                return await eor(
+                    rs,
+                    "Could not send the setup guide. Check chat access and try again.",
+                )
+    if target == rs.chat_id:
+        return await rs.delete()
     if not (rs.chat_id == LOG_CHANNEL and rs.client._bot):
-        await eor(rs, f"**[Click Here]({msg.message_link})**")
+        link = getattr(msg, "message_link", None)
+        if link:
+            await eor(rs, f"**[Open setup guide]({link})**")
+        else:
+            await eor(rs, "Setup guide sent to the configured log channel.")

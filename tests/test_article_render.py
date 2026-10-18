@@ -17,9 +17,10 @@ What must keep working, regardless of which module renders it:
 * the loose dict shapes the old minimal renderer accepted --
   ``{"type": "header"|"paragraph"|"code", "text": ...}`` and
   ``{"type": "list", "items": [...], "ordered": bool}`` -- still render;
-* a full :class:`RichBlocks` (including ``table()``/``expandable()``,
-  which the old minimal renderer could not render at all) renders
-  correctly on both the native-HTML and plain-text-fallback paths.
+* a full :class:`RichBlocks` (including ``table()``/``expandable()``)
+  renders correctly into the native RichMessage payload;
+* missing native RichMessage constructors fail loudly rather than degrading
+  into a plain Telethon article.
 
 ``pyUltroid._core.inlineresults``/``pyUltroid._core.richmsg`` only depend
 on stdlib + telethon, so this imports them directly without the pyUltroid
@@ -49,10 +50,7 @@ from pyUltroid._core.richmsg import RichBlocks
 
 
 class _FakeClient:
-    """Just enough of ``TelegramClient`` for ``InlineBuilder.article()``
-    (via ``InlineResults.article_rich``'s plain-``article`` fallback) and
-    for ``InlineResults.article_rich``'s own native-path ``reply_markup``
-    build -- no network, no real parsing."""
+    """Just enough client behavior for native rich inline markup -- no network."""
 
     def build_reply_markup(self, buttons):
         return None
@@ -251,27 +249,12 @@ def test_article_rich_table_and_expandable_end_to_end_native():
     assert "<blockquote expandable>" in html
 
 
-def test_article_rich_table_and_expandable_fallback_when_rich_unavailable(monkeypatch):
-    # Force the "no native Rich Message support" branch so article_rich
-    # degrades to a plain mdv3 article -- the same branch that used to
-    # rely on assistant/inlinestuff.py's _simple_blocks pre-degrading
-    # table()/expandable() blocks before handing them to the (deleted)
-    # minimal renderer. It must now render a legible summary on its own.
-    monkeypatch.setattr(inlineresults, "has", lambda kind: False)
-    ires = InlineResults(_FakeClient())
-    blocks = (
-        RichBlocks()
-        .header("Report")
-        .table([["Plugins", "42"], ["Addons", "7"]], caption="Overview")
-        .expandable("More", "details here")
-    )
-    result = _run(ires.article_rich("T", blocks))
-    assert isinstance(result, types.InputBotInlineResult)
-    text = result.send_message.message
-    assert "Overview" in text
-    assert "Plugins" in text and "42" in text
-    assert "More" in text
-    assert "details here" in text
+def test_inline_results_has_no_layer_availability_wrapper():
+    from telethon.tl import types
+
+    assert hasattr(types, "InputRichMessageHTML")
+    assert hasattr(types, "InputBotInlineMessageRichMessage")
+    assert not hasattr(InlineResults, "has")
 
 
 # ──────────────────────────────────────────────────────────────────────────

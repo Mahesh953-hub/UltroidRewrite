@@ -13,6 +13,7 @@ from pyUltroid._core.richmsg import (
     coerce_to_rich_markup,
     normalize_blocks,
     render_blocks_native_html,
+    rich_markup_from_blocks,
 )
 from pyUltroid.fns.command_help import command_patterns, command_syntax
 
@@ -43,6 +44,7 @@ def test_main_help_menu_has_hint_overview_dividers_and_italic_footer():
             "RichMarkup": RichMarkup,
             "normalize_blocks": normalize_blocks,
             "render_blocks_native_html": render_blocks_native_html,
+            "rich_markup_from_blocks": rich_markup_from_blocks,
             "_help_overview_rows": lambda: [
                 ["Plugins", "7", "Core plugin commands and controls"],
                 ["Inline Plugins", "3", "Searchable inline tools"],
@@ -84,6 +86,7 @@ def test_plugin_catalog_has_live_totals_and_standard_page_structure():
             "RichMarkup": RichMarkup,
             "normalize_blocks": normalize_blocks,
             "render_blocks_native_html": render_blocks_native_html,
+            "rich_markup_from_blocks": rich_markup_from_blocks,
             "command_patterns": command_patterns,
             "_plugin_pmf_entries": lambda _name: [],
             "_page_footer": lambda page, pages, total: (
@@ -119,6 +122,7 @@ def test_plugin_catalog_footer_tracks_later_pages_and_total_plugins():
             "RichMarkup": RichMarkup,
             "normalize_blocks": normalize_blocks,
             "render_blocks_native_html": render_blocks_native_html,
+            "rich_markup_from_blocks": rich_markup_from_blocks,
             "command_patterns": command_patterns,
             "_plugin_pmf_entries": lambda _name: [],
             "_page_footer": lambda page, pages, total: (
@@ -154,6 +158,7 @@ def _plugin_card_namespace():
         "RichMarkup": RichMarkup,
         "normalize_blocks": normalize_blocks,
         "render_blocks_native_html": render_blocks_native_html,
+        "rich_markup_from_blocks": rich_markup_from_blocks,
         "coerce_to_rich_markup": coerce_to_rich_markup,
         "_markdown_docs_markup": docs_converter,
         "command_syntax": command_syntax,
@@ -217,6 +222,7 @@ def test_standalone_help_uses_category_count_and_indented_rich_documentation():
             "RichMarkup": RichMarkup,
             "normalize_blocks": normalize_blocks,
             "render_blocks_native_html": render_blocks_native_html,
+            "rich_markup_from_blocks": rich_markup_from_blocks,
             "coerce_to_rich_markup": coerce_to_rich_markup,
             "_markdown_docs_markup": _plugin_card_namespace()[
                 "_markdown_docs_markup"
@@ -452,9 +458,35 @@ def test_callback_editor_targets_inline_message_id_and_forces_native_rich():
     assert result == "edited"
     args, kwargs = calls[0]
     assert args[:3] == (event.client, inline_id, None)
-    assert kwargs["engine"] == "rich"
     assert kwargs["format"] == "html"
     assert kwargs["buttons"] == [["buttons"]]
+    assert "engine" not in kwargs
+
+
+def test_callback_editor_uses_message_id_for_chat_callbacks_not_query_id():
+    calls = []
+
+    async def edit_rich(*args, **kwargs):
+        calls.append((args, kwargs))
+        return "edited"
+
+    helper = _load_functions(
+        ROOT / "plugins/_inline.py",
+        {"_edit_rich_callback"},
+        {"edit_rich": edit_rich},
+    )["_edit_rich_callback"]
+    event = SimpleNamespace(
+        client=object(),
+        chat_id=123,
+        id=987654321012345678,
+        message_id=42,
+        query=SimpleNamespace(msg_id=42),
+    )
+
+    assert asyncio.run(helper(event, "rich body", [["buttons"]])) == "edited"
+    args, kwargs = calls[0]
+    assert args[:3] == (event.client, 123, 42)
+    assert kwargs["format"] == "html"
 
 
 def test_help_callback_no_longer_selects_generic_translation_body():

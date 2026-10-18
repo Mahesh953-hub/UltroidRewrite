@@ -13,13 +13,6 @@ from telethon import Button
 from ..runtime import RuntimeContext
 from ..storage import UDBStore
 
-try:  # keep this adapter importable without the private core package
-    from pyUltroid._core.inlineresults import has as _inline_has
-except ImportError:
-
-    def _inline_has(kind: str) -> bool:
-        return False
-
 
 class BotMode(StrEnum):
     BUSINESS = "business"
@@ -43,7 +36,8 @@ def guest_chat_surfaces():
     required = (
         "UpdateBotGuestChatQuery",
         "InputBotInlineResult",
-        "InputBotInlineMessageText",
+        "InputBotInlineMessageRichMessage",
+        "InputRichMessageHTML",
     )
     if not all(hasattr(types, name) for name in required):
         return None
@@ -108,13 +102,12 @@ def _mode_text(
     store: ModeStore,
     guest_available: bool,
     *,
-    rich_available: bool = False,
     styled_available: bool = False,
 ) -> str:
     mode = store.get_mode()
     config = store.guest_config()
     status = "available" if guest_available else "unavailable"
-    preview = "rich article" if rich_available else "plain article"
+    preview = "native RichMessage article"
     if styled_available:
         buttons_status = "styled switch-inline"
     elif guest_available:
@@ -248,28 +241,15 @@ def _guest_result(
     types: Any,
     config: dict[str, Any],
     *,
-    rich_available: bool,
     styled_buttons: bool,
 ):
-    """Build the guest-chat inline article result: rich when available, else plain."""
+    """Build the guest-chat inline article using native layer-230 RichMessage."""
     result_id = f"guest-{int(time.monotonic() // _interval(config))}"
     markup = _guest_reply_markup(context, types, config, styled_buttons=styled_buttons)
-    rich_ok = (
-        rich_available
-        and getattr(types, "InputBotInlineMessageRichMessage", None) is not None
-        and getattr(types, "InputRichMessageHTML", None) is not None
+    send_message = types.InputBotInlineMessageRichMessage(
+        rich_message=types.InputRichMessageHTML(html=_rich_article_html(config)),
+        reply_markup=markup,
     )
-    if rich_ok:
-        send_message = types.InputBotInlineMessageRichMessage(
-            rich_message=types.InputRichMessageHTML(html=_rich_article_html(config)),
-            reply_markup=markup,
-        )
-    else:
-        send_message = types.InputBotInlineMessageText(
-            message=str(config["welcome_text"]),
-            no_webpage=True,
-            reply_markup=markup,
-        )
     return types.InputBotInlineResult(
         id=result_id,
         type="article",
@@ -286,11 +266,6 @@ class ModePlugin:
         store = ModeStore(context.db)
         surfaces = guest_chat_surfaces()
         guest_available = bool(surfaces and context.capabilities.guest_chat)
-        rich_available = bool(
-            guest_available
-            and context.capabilities.rich_message
-            and _inline_has("article_rich")
-        )
         styled_buttons = bool(guest_available and context.capabilities.styled_buttons)
 
         @context.dispatcher.command("mode", priority=20)
@@ -299,7 +274,6 @@ class ModePlugin:
             return error or _mode_text(
                 store,
                 guest_available,
-                rich_available=rich_available,
                 styled_available=styled_buttons,
             )
 
@@ -316,7 +290,6 @@ class ModePlugin:
                 context,
                 types,
                 config,
-                rich_available=rich_available,
                 styled_buttons=styled_buttons,
             )
             await context.client(

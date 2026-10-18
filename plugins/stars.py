@@ -67,15 +67,15 @@ from pyUltroid._core.buttonkit import PendingConfirmations, button
 from pyUltroid._core.richmsg import RichBlocks, send_rich, table_to_text
 from pyUltroid._core.stars import StarsUnsupportedError
 
-from ._rebrand import ui_cards_enabled
 from . import HNDLR, get_string, ultroid_cmd
+from ._rebrand import ui_cards_enabled
 
 # ──────────────────────────────────────────────────────────────────────
 # Design notes (read before touching the paid-messages surface below)
 # ──────────────────────────────────────────────────────────────────────
 #
 # Verified against the pinned fork (/code/Mahesh953-hub/Telethon,
-# layer 228):
+# layer 230):
 #
 # * ``messages.SendMessageRequest.allow_paid_stars`` is an ``Optional[int]``
 #   (Stars the *sender* pre-authorizes spending on this one message), NOT

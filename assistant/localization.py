@@ -2,51 +2,116 @@
 # Copyright (C) 2021-2023 TeamUltroid
 #
 # This file is a part of < https://github.com/TeamUltroid/Ultroid/ >
-# PLease read the GNU Affero General Public License in
-# <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
+# Please read the GNU Affero General Public License in
+# <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE/>.
+
+from custom.tg import ikm
+from pyUltroid._core.richmsg import edit_rich
 
 from . import (
     ULTConfig,
     callback,
     get_back_button,
     get_languages,
-    get_string,
     udB,
 )
 from ._cbs import cb, cb_exact_pattern, cb_pattern
-from custom.tg import ikm
+from .rich_pages import callback_edit_target, rich_page
 
 LANG_MENU = cb_exact_pattern("assistant", "lang", "menu")
 LANG_SET_PATTERN = cb_pattern("assistant", "lang", "set")
-
 MAIN_MENU = cb("assistant", "start", "mainmenu")
+
+
+def _language_key(raw: str, languages: dict) -> str | None:
+    """Resolve a callback token against the currently supported locale keys."""
+    key = str(raw or "").strip()
+    if key in languages:
+        return key
+    return next(
+        (
+            candidate
+            for candidate in languages
+            if candidate.casefold() == key.casefold()
+        ),
+        None,
+    )
+
+
+async def _edit_language(event, blocks, buttons):
+    """Edit this callback's message through the native RichMessage path."""
+    peer, message = callback_edit_target(event)
+    return await edit_rich(
+        event.client,
+        peer,
+        message,
+        blocks,
+        format="html",
+        buttons=buttons,
+        link_preview=False,
+    )
 
 
 @callback(LANG_MENU, owner=True)
 async def setlang(event):
     languages = get_languages()
-    btt = [
+    current = str(getattr(ULTConfig, "lang", "en") or "en").casefold()
+    entries = [
         (
-            f"{languages[ult]['natively']} [{ult.lower()}]",
-            cb("assistant", "lang", "set", ult),
-            "primary",
+            f"{languages[code]['natively']} [{code.casefold()}]",
+            cb("assistant", "lang", "set", code),
+            "success" if code.casefold() == current else None,
         )
-        for ult in languages
+        for code in languages
     ]
-    buttons_data = [list(pair) for pair in zip(btt[::2], btt[1::2])]
-    if len(btt) % 2 == 1:
-        buttons_data.append([btt[-1]])
-    buttons_data.append([("« Back", MAIN_MENU, "danger")])
-    await event.edit(get_string("ast_4"), buttons=ikm(buttons_data, icon=True))
+    rows = [list(pair) for pair in zip(entries[::2], entries[1::2])]
+    if len(entries) % 2:
+        rows.append([entries[-1]])
+    rows.append([("Back", MAIN_MENU, None)])
+    await _edit_language(
+        event,
+        rich_page(
+            "Language",
+            [
+                (
+                    f"{languages[code]['natively']} [{code.casefold()}]",
+                    "Currently selected" if code.casefold() == current else "Choose this language",
+                )
+                for code in languages
+            ],
+            description="Choose the language used by the assistant.",
+            columns=("Language", "Status"),
+            total=len(languages),
+        ),
+        ikm(rows, icon=False),
+    )
 
 
 @callback(LANG_SET_PATTERN, owner=True)
 async def settt(event):
-    lang = event.data_match.group(1).decode("utf-8")
+    try:
+        raw = event.data_match.group(1).decode("utf-8")
+    except (AttributeError, UnicodeDecodeError, IndexError):
+        return await event.answer("That language selection is invalid.", alert=True)
+
     languages = get_languages()
+    lang = _language_key(raw, languages)
+    if lang is None:
+        return await event.answer("That language is no longer available.", alert=True)
+
     ULTConfig.lang = lang
-    udB.del_key("language") if lang == "en" else udB.set_key("language", lang)
-    await event.edit(
-        f"Your language has been set to {languages[lang]['natively']} [{lang}].",
-        buttons=get_back_button(cb("assistant", "lang", "menu")),
+    udB.del_key("language") if lang.casefold() == "en" else udB.set_key(
+        "language", lang
+    )
+    name = str(languages[lang].get("natively") or lang)
+    await _edit_language(
+        event,
+        rich_page(
+            "Language updated",
+            [("Language", f"{name} [{lang}]")],
+            description="The assistant language has been updated.",
+            columns=("Setting", "Current value"),
+            total=1,
+        ),
+        get_back_button(cb("assistant", "lang", "menu")),
     )

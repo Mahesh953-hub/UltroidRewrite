@@ -9,6 +9,8 @@
 
 # --------------------------------------- Imports -------------------------------------------- #
 
+import ast
+import html
 import os
 
 from telethon.errors.rpcerrorlist import MessageIdInvalidError, UserNotParticipantError
@@ -19,16 +21,34 @@ from telethon.tl.types import Channel, Chat
 from telethon.utils import get_display_name
 
 from pyUltroid.dB.base import KeyManager
-from pyUltroid.dB.botchat_db import *
+from pyUltroid.dB import db
 from custom.tg import ikm
-from custom.fmt import fmtmsg
-
+from custom.fmt import fmtmsg, rawhtml
 from . import *
 from pyUltroid.fns import fns
 
 botb = KeyManager("BOTBLS", cast=list)
-FSUB = udB.get_key("PMBOT_FSUB")
 CACHE = {}
+
+
+def _force_sub_chats(value):
+    """Read both native and legacy stringified PMBOT_FSUB values safely."""
+    if value is None or value is False or value == "":
+        return ()
+    if isinstance(value, str):
+        try:
+            value = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            value = [part.strip() for part in value.split(",") if part.strip()]
+    if value is None or value is False:
+        return ()
+    if isinstance(value, (str, int)):
+        value = (value,)
+    if not isinstance(value, (list, tuple, set)):
+        return ()
+    return tuple(value)
+
+
 # --------------------------------------- Incoming -------------------------------------------- #
 
 
@@ -39,13 +59,17 @@ CACHE = {}
 )
 async def on_new_mssg(event):
     who = event.sender_id
+    message_text = (
+        getattr(event, "raw_text", None) or getattr(event, "text", None) or ""
+    )
     # doesn't reply to that user anymore
-    if event.text.startswith("/") or who == OWNER_ID:
+    if message_text.startswith("/") or who == OWNER_ID:
         return
-    if FSUB:
+    force_sub_chats = _force_sub_chats(udB.get_key("PMBOT_FSUB"))
+    if force_sub_chats:
         MSG = ""
         BTTS = []
-        for chat in FSUB:
+        for chat in force_sub_chats:
             try:
                 await event.client.get_permissions(chat, event.sender_id)
             except UserNotParticipantError:
@@ -71,16 +95,16 @@ async def on_new_mssg(event):
                     BTTS.append((get_display_name(TAHC_), "url", uri))
                 except Exception as er:
                     LOGS.exception(f"Error On PmBot Force Sub!\n - {chat} \n{er}")
-        if MSG and BTTS:
+        if MSG:
             return await event.reply(
-                fmtmsg("Subscription Required 📢", msgs=MSG),
-                buttons=ikm(BTTS),
+                fmtmsg("Subscription Required ", msgs=MSG),
+                buttons=ikm(BTTS) if BTTS else None,
                 parse_mode="html",
             )
     try:
         xx = await event.forward_to(OWNER_ID)
     except MessageIdInvalidError:
-        if not event.message and not event.media:
+        if not getattr(event, "message", None) and not getattr(event, "media", None):
             return
         try:
             xx = await event.client.send_message(
@@ -90,10 +114,8 @@ async def on_new_mssg(event):
             LOGS.exception("PmBot fallback copy failed")
             return
     if event.fwd_from:
-        await xx.reply(
-            f"From {fns.inline_mention(event.sender)} [`{event.sender_id}`]"
-        )
-    add_stuff(xx.id, who)
+        await xx.reply(f"From {fns.inline_mention(event.sender)} [{event.sender_id}]")
+    db.botchat.add(xx.id, who)
 
 
 # --------------------------------------- Outgoing -------------------------------------------- #
@@ -107,17 +129,24 @@ async def on_new_mssg(event):
 )
 async def on_out_mssg(event):
     x = event.reply_to_msg_id
-    to_user = get_who(x)
-    if event.text.startswith("/who"):
+    to_user = db.botchat.get_who(x)
+    message_text = (
+        getattr(event, "raw_text", None) or getattr(event, "text", None) or ""
+    )
+    if message_text.startswith("/who"):
         try:
+            if not to_user:
+                return await event.reply(
+                    "Could not identify the user for this message."
+                )
             k = await asst.get_entity(to_user)
             photu = await event.client.download_profile_photo(k.id)
             text_out = fmtmsg(
-                "User Information 👤",
+                "User Information ",
                 {
                     "Name": get_display_name(k),
                     "ID": str(k.id),
-                    "Profile Link": helper.inline_mention(k),
+                    "Profile Link": fns.inline_mention(k, html=True),
                 },
             )
             await event.reply(
@@ -128,12 +157,12 @@ async def on_out_mssg(event):
             if photu:
                 os.remove(photu)
             return
-        except BaseException as er:
+        except Exception as er:
             return await event.reply(
-                fmtmsg("Error ❌", msgs=str(er)),
+                fmtmsg("Error ", msgs=str(er)),
                 parse_mode="html",
             )
-    elif event.text.startswith("/"):
+    elif message_text.startswith("/"):
         return
     if to_user:
         await asst.send_message(to_user, event.message)
@@ -154,7 +183,9 @@ async def banhammer(event):
             fmtmsg("Ban target not found", msgs=get_string("pmbot_2")),
             parse_mode="html",
         )
-    target = get_who(event.reply_to_msg_id)
+    target = db.botchat.get_who(event.reply_to_msg_id)
+    if not target:
+        return await event.reply("Could not identify the user for this message.")
     if botb.contains(target):
         return await event.reply(
             fmtmsg("Already Banned", msgs=get_string("pmbot_3")),
@@ -163,7 +194,10 @@ async def banhammer(event):
 
     botb.add(target)
     await event.reply(
-        fmtmsg("User Banned 🚫", msgs=f"User ID: <code>{target}</code>"),
+        fmtmsg(
+            "User Banned",
+            msgs=rawhtml(f"User ID: <code>{html.escape(str(target))}</code>"),
+        ),
         parse_mode="html",
     )
     await asst.send_message(target, get_string("pmbot_4"))
@@ -181,7 +215,9 @@ async def unbanhammer(event):
             fmtmsg("Unban target not found", msgs=get_string("pmbot_5")),
             parse_mode="html",
         )
-    target = get_who(event.reply_to_msg_id)
+    target = db.botchat.get_who(event.reply_to_msg_id)
+    if not target:
+        return await event.reply("Could not identify the user for this message.")
     if not botb.contains(target):
         return await event.reply(
             fmtmsg("Not Banned", msgs=get_string("pmbot_6")),
@@ -190,7 +226,10 @@ async def unbanhammer(event):
 
     botb.remove(target)
     await event.reply(
-        fmtmsg("User Unbanned ✅", msgs=f"User ID: <code>{target}</code>"),
+        fmtmsg(
+            "User Unbanned",
+            msgs=rawhtml(f"User ID: <code>{html.escape(str(target))}</code>"),
+        ),
         parse_mode="html",
     )
     await asst.send_message(target, get_string("pmbot_7"))

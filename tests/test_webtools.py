@@ -22,13 +22,12 @@ import textwrap
 from pathlib import Path
 
 import pytest
-from telethon import Button
+from telethon.tl import functions
 from telethon.tl import types as tl_types
+from telethon.tl.functions.messages import SendWebViewResultMessageRequest
 
 import custom.tg as tg
 from custom.tg import ikm, web_app_button
-from telethon.tl import functions
-from telethon.tl.functions.messages import SendWebViewResultMessageRequest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,21 +41,24 @@ SENTINEL = "WEBTOOLS_LISTENER_JSON:"
 
 def test_web_app_button_default_uses_keyboard_button_webview():
     btn = web_app_button("Open App", "https://example.com/app")
-    assert isinstance(btn, tl_types.KeyboardButtonWebView)
+    assert isinstance(btn, tl_types.KeyboardInlineButton)
+    assert isinstance(btn.type, tl_types.InlineButtonTypeWebView)
     assert btn.text == "Open App"
-    assert btn.url == "https://example.com/app"
+    assert btn.type.url == "https://example.com/app"
 
 
 def test_web_app_button_simple_uses_keyboard_button_simple_webview():
     btn = web_app_button("Open App", "https://example.com/app", simple=True)
-    assert isinstance(btn, tl_types.KeyboardButtonSimpleWebView)
+    assert isinstance(btn, tl_types.KeyboardButton)
+    assert isinstance(btn.type, tl_types.ButtonTypeSimpleWebView)
 
 
 def test_web_app_button_style_and_icon_propagation():
     btn = web_app_button(
         "Open App", "https://example.com/app", style="primary", icon=123
     )
-    assert isinstance(btn, tl_types.KeyboardButtonWebView)
+    assert isinstance(btn, tl_types.KeyboardInlineButton)
+    assert isinstance(btn.type, tl_types.InlineButtonTypeWebView)
     assert isinstance(btn.style, tl_types.KeyboardButtonStyle)
     assert btn.style.bg_primary is True
     assert btn.style.icon == 123
@@ -65,19 +67,22 @@ def test_web_app_button_style_and_icon_propagation():
 def test_ikm_web_app_tuple_builds_keyboard_button_webview():
     rows = ikm([("Open App", "web_app", "https://example.com/app")])
     btn = rows[0][0]
-    assert isinstance(btn, tl_types.KeyboardButtonWebView)
+    assert isinstance(btn, tl_types.KeyboardInlineButton)
+    assert isinstance(btn.type, tl_types.InlineButtonTypeWebView)
     assert btn.text == "Open App"
-    assert btn.url == "https://example.com/app"
+    assert btn.type.url == "https://example.com/app"
 
 
 def test_ikm_webapp_alias_also_builds_keyboard_button_webview():
     rows = ikm([("Open App", "webapp", "https://example.com/app")])
-    assert isinstance(rows[0][0], tl_types.KeyboardButtonWebView)
+    assert isinstance(rows[0][0], tl_types.KeyboardInlineButton)
+    assert isinstance(rows[0][0].type, tl_types.InlineButtonTypeWebView)
 
 
 def test_ikm_simple_webapp_tuple_builds_simple_webview():
     rows = ikm([("Open App", "simple_webapp", "https://example.com/app")])
-    assert isinstance(rows[0][0], tl_types.KeyboardButtonSimpleWebView)
+    assert isinstance(rows[0][0], tl_types.KeyboardButton)
+    assert isinstance(rows[0][0].type, tl_types.ButtonTypeSimpleWebView)
 
 
 def test_ikm_web_app_tuple_style_and_icon():
@@ -94,6 +99,7 @@ def test_web_app_button_degrades_to_url_when_tl_types_missing(monkeypatch):
         "Open App", "https://example.com/app", style="success", icon=42
     )
     assert isinstance(btn, tl_types.KeyboardInlineButton)
+    assert isinstance(btn.type, tl_types.InlineButtonTypeUrl)
     assert btn.type.url == "https://example.com/app"
     assert btn.style.bg_success is True
     assert btn.style.icon == 42
@@ -103,8 +109,9 @@ def test_web_app_button_degrades_to_inline_when_no_url_and_no_tl_types(monkeypat
     monkeypatch.setattr(tg, "_WebViewButtonCls", None)
     monkeypatch.setattr(tg, "_SimpleWebViewButtonCls", None)
     btn = web_app_button("Open App", "", style="primary")
-    assert isinstance(btn, tl_types.KeyboardButtonCallback)
-    assert btn.data == b"web_app"
+    assert isinstance(btn, tl_types.KeyboardInlineButton)
+    assert isinstance(btn.type, tl_types.InlineButtonTypeCallback)
+    assert btn.type.data == b"web_app"
 
 
 def test_ikm_web_app_degrades_gracefully_when_tl_types_missing(monkeypatch):
@@ -113,6 +120,7 @@ def test_ikm_web_app_degrades_gracefully_when_tl_types_missing(monkeypatch):
     rows = ikm([("Open App", "web_app", "https://example.com/app")])
     btn = rows[0][0]
     assert isinstance(btn, tl_types.KeyboardInlineButton)
+    assert isinstance(btn.type, tl_types.InlineButtonTypeUrl)
     assert btn.type.url == "https://example.com/app"
 
 
@@ -155,16 +163,18 @@ class _ListenerWorker:
 
     SCRIPT = textwrap.dedent(r"""
         import asyncio
+        import importlib
         import json
         import os
         import re
         import sys
+        from types import SimpleNamespace
 
         os.environ["SESSION"] = "1" + "A" * 352
-        os.environ.setdefault("API_ID", "12345")
-        os.environ.setdefault("API_HASH", "abcdef")
-        os.environ.setdefault("BOT_TOKEN", "123:abc")
-        os.environ.setdefault("LOG_CHANNEL", "-10012345")
+        os.environ["API_ID"] = "12345"
+        os.environ["API_HASH"] = "abcdef"
+        os.environ["BOT_TOKEN"] = "123:abc"
+        os.environ["LOG_CHANNEL"] = "-10012345"
         # Enable the live gate so the webview command exercises the real API path.
         os.environ["WEBTOOLS_LIVE"] = "1"
 
@@ -205,9 +215,79 @@ class _ListenerWorker:
 
         sys.argv[0] = "-m"
         import pyUltroid
-        from pyUltroid import ultroid_bot
+
+        # Plugin decorators intentionally require an initialized runtime DB.
+        # Bind a hermetic in-memory implementation before importing listeners.
+        class FakeDB:
+            def __init__(self):
+                self.values = {}
+
+            def get_key(self, key):
+                return self.values.get(key)
+
+            def set_key(self, key, value, **kwargs):
+                self.values[key] = value
+                return True
+
+            def del_key(self, key):
+                self.values.pop(key, None)
+                return True
+
+            def keys(self):
+                return list(self.values)
+
+        pyUltroid.udB = FakeDB()
+
+        from pyUltroid.startup.dispatcher import CommandDispatcher
+
+        captured_requests = []
+        sent_logs = []
+
+        class FakeClient:
+            full_name = "Mocked User"
+            uid = 123456789
+            parse_mode = None
+
+            def __init__(self):
+                self.udB = pyUltroid.udB
+                self.me = DummyUser()
+                self.handlers = []
+                self.dispatcher = CommandDispatcher(self, prefix=".")
+
+            def add_event_handler(self, handler, event=None):
+                self.handlers.append((handler, event))
+
+            def remove_event_handler(self, handler, event=None):
+                self.handlers = [
+                    pair
+                    for pair in self.handlers
+                    if pair[0] is not handler or (event is not None and pair[1] != event)
+                ]
+
+            async def get_entity(self, _peer):
+                return DummyUser()
+
+            async def __call__(self, request, **_kwargs):
+                captured_requests.append(request)
+                return types.WebViewResultUrl(
+                    url="https://result.example.com/", query_id=123456789
+                )
+
+            async def send_message(self, peer, text, **_kwargs):
+                sent_logs.append((peer, text))
+
+        fake_client = FakeClient()
+        pyUltroid.ultroid_bot = fake_client
+        pyUltroid.master = SimpleNamespace(
+            telegram_clients=[fake_client], clients_by_role=lambda _role: []
+        )
+        import pyUltroid._misc._decorators as decorators
+
+        importlib.reload(decorators)
+        ultroid_bot = fake_client
 
         import plugins.webtools as wt
+        wt.LOG_CHANNEL = -10012345
 
         from telethon.types import (
             MessageService,
@@ -246,15 +326,6 @@ class _ListenerWorker:
                 simple_button = simple_markup.rows[0][0]
 
             # --- Targeted test: webview command uses RequestWebViewRequest ---
-            captured_requests = []
-            async def fake_client_call(self, request, **kwargs):
-                captured_requests.append(request)
-                return types.WebViewResultUrl(
-                    url="https://result.example.com/",
-                    query_id=123456789,
-                )
-            TelegramClient.__call__ = fake_client_call
-
             webview_event = FakeCmdEvent(
                 ".webview mybot https://example.com/webview",
                 r"\.webview( (.*)|$)",
@@ -289,13 +360,24 @@ class _ListenerWorker:
             )
             await ultroid_bot.dispatcher._dispatch(UpdateNewMessage(message=msg_me, pts=2, pts_count=1))
 
+            owner_event = FakeCmdEvent(".webappdata", r"\.webappdata$")
+            await wt.webappdata_cmd(owner_event)
+            stranger_event = FakeCmdEvent(".webappdata", r"\.webappdata$")
+            stranger_event.out = False
+            stranger_event.sender_id = 987654321
+            await wt.webappdata_cmd(stranger_event)
+
             await asyncio.sleep(0.05)
 
             print("WEBTOOLS_LISTENER_JSON:" + json.dumps({
                 "last": wt._last_webapp_data,
+                "owner_data": owner_event.eor_calls[0][0][0] if owner_event.eor_calls else None,
+                "stranger_replies": len(stranger_event.eor_calls),
+                "sent_logs": sent_logs,
                 "listener_count": len(ultroid_bot.dispatcher.listener_states()),
                 "simple_markup_class": simple_markup.__class__.__name__ if simple_markup else None,
                 "simple_button_class": simple_button.__class__.__name__ if simple_button else None,
+                "simple_button_type_class": simple_button.type.__class__.__name__ if simple_button else None,
                 "webview_request_class": webview_request_class,
             }))
 
@@ -352,11 +434,24 @@ def test_listeners_registered(listener_report):
     assert listener_report["listener_count"] >= 2
 
 
+def test_webapp_data_is_owner_only_and_log_payload_is_redacted(listener_report):
+    owner_data = listener_report["owner_data"]
+    assert "demo-text" in owner_data
+    assert "me-data" in owner_data
+    assert listener_report["stranger_replies"] == 0
+
+    forwarded = json.dumps(listener_report["sent_logs"])
+    assert "payload withheld" in forwarded
+    for private_value in ("demo-text", "me-text", "me-data", "999888777"):
+        assert private_value not in forwarded
+
+
 def test_simplewebapp_uses_reply_keyboard_markup(listener_report):
     """KeyboardButtonSimpleWebView is a reply-keyboard button and must be sent
     via ReplyKeyboardMarkup, not as inline buttons."""
     assert listener_report["simple_markup_class"] == "ReplyKeyboardMarkup"
-    assert listener_report["simple_button_class"] == "KeyboardButtonSimpleWebView"
+    assert listener_report["simple_button_class"] == "KeyboardButton"
+    assert listener_report["simple_button_type_class"] == "ButtonTypeSimpleWebView"
 
 
 def test_webview_command_uses_real_request_webview_request_class(listener_report):

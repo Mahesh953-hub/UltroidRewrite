@@ -160,6 +160,7 @@ class LoopGuard:
         self._fail_counts: dict[str, int] = {}
         self._tool_fail_counts: dict[str, int] = {}
         self._tool_calls: dict[str, int] = {}
+        self._pending_signatures: set[str] = set()
         self._last_progress: float = self._clock()
         self._stale_rounds: int = 0
         self._round_repeated: bool = False
@@ -175,6 +176,15 @@ class LoopGuard:
         sixth identical one.
         """
         signature = signature_of(tool_name, arguments)
+        if signature in self._pending_signatures:
+            return GuardVerdict(
+                decision=Decision.BLOCK,
+                tool_name=tool_name,
+                code="duplicate_in_flight",
+                message="An identical call is already running; wait for its result.",
+                count=1,
+                signature=signature,
+            )
         failures = self._fail_counts.get(signature, 0)
         if failures >= self.exact_fail_block:
             self._note_repeat()
@@ -192,13 +202,12 @@ class LoopGuard:
             )
         if failures >= self.exact_fail_warn:
             self._note_repeat()
+            self._pending_signatures.add(signature)
             return GuardVerdict(
                 decision=Decision.WARN,
                 tool_name=tool_name,
                 code="repeated_failure",
-                message=(
-                    f"This exact call has already failed {failures} times."
-                ),
+                message=(f"This exact call has already failed {failures} times."),
                 count=failures,
                 signature=signature,
             )
@@ -231,20 +240,26 @@ class LoopGuard:
                 count=tool_failures,
             )
         if tool_failures >= self.same_tool_warn:
+            self._pending_signatures.add(signature)
             return GuardVerdict(
                 decision=Decision.WARN,
                 tool_name=tool_name,
                 code="tool_failing",
                 message=f"'{tool_name}' has failed {tool_failures} times so far.",
                 count=tool_failures,
+                signature=signature,
             )
-        return GuardVerdict(decision=Decision.ALLOW, tool_name=tool_name, signature=signature)
+        self._pending_signatures.add(signature)
+        return GuardVerdict(
+            decision=Decision.ALLOW, tool_name=tool_name, signature=signature
+        )
 
     # ── post-dispatch ─────────────────────────────────────────────────────
 
     def observe(self, tool_name: str, arguments: Any, result: Any) -> None:
         """Record one completed call. A success resets the stall timer."""
         signature = signature_of(tool_name, arguments)
+        self._pending_signatures.discard(signature)
         self._tool_calls[tool_name] = self._tool_calls.get(tool_name, 0) + 1
         if is_failure(result):
             self._fail_counts[signature] = self._fail_counts.get(signature, 0) + 1

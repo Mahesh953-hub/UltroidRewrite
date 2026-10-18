@@ -8,7 +8,6 @@ import logging
 from typing import Any, ClassVar
 
 from telethon import TelegramClient, events
-from telethon.custom import InlineBuilder
 from telethon.functions import InvokeWithBusinessConnectionRequest, messages
 from telethon.types import (
     InputBotInlineMessageID,
@@ -24,6 +23,8 @@ from telethon.types import (
     UpdateBusinessBotCallbackQuery,
 )
 from telethon.utils import get_input_media
+
+from .._core.inlineresults import InlineResults
 
 __all__ = ["BusinessAddons"]
 
@@ -134,7 +135,7 @@ class BusinessAddons:
             return None
 
         client = getattr(update, "_client", None)
-        inline = InlineBuilder(client)
+        inline = InlineResults(client)
         match value:
             case "article":
                 result = await inline.article(*args, **kwargs)

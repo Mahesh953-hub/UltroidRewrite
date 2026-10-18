@@ -58,7 +58,6 @@ except ImportError:
 
 from telethon.errors import PeerIdInvalidError, YouBlockedUserError
 from telethon.errors.rpcerrorlist import PackShortNameInvalidError as NameErr
-from pyUltroid.fns import fns
 from telethon.tl.functions.messages import UploadMediaRequest
 from telethon.tl.types import (
     DocumentAttributeCustomEmoji,
@@ -68,7 +67,8 @@ from telethon.tl.types import (
 )
 from telethon.utils import get_input_document
 
-from pyUltroid._core.entities import custom_emoji as _custom_emoji_entity
+from custom.entities import custom_emoji as _custom_emoji_entity
+from pyUltroid.fns import fns
 
 from . import (
     KANGING_STR,
@@ -111,7 +111,6 @@ async def pack_kangish(_):
     username = "@" + _.sender.username
     # actual pack name that will showup in title
     _packname = cmdtext or f"Pack By {username if username else _.sender.first_name}"
-    typee = None
     if not local:
         _id = _e.media.document.attributes[1].stickerset.id
         _hash = _e.media.document.attributes[1].stickerset.access_hash
@@ -125,11 +124,6 @@ async def pack_kangish(_):
         # idk but this doesn't just work?
         docs = []
         files = glob.glob(cmdtext + "/*")
-        exte = files[-1]
-        if exte.endswith(".tgs"):
-            typee = "anim"
-        elif exte.endswith(".webm"):
-            typee = "vid"
         count = 0
         for file in files:
             if file.endswith((".tgs", ".webm")):

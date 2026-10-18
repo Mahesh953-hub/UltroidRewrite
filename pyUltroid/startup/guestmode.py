@@ -15,9 +15,9 @@ LOGS = logging.getLogger("pyUltLogs")
 def _store():
     # Lazy on purpose: the dB layer reads udB at import time, and this module
     # must stay importable before the bootstrap finishes.
-    from ..dB.guest_db import guest_db
+    from ..dB import db
 
-    return guest_db
+    return db.guest
 
 
 def get_guests() -> dict:

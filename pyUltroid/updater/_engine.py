@@ -71,16 +71,16 @@ class UpdateState:
 # ── UpdateEngine
 class UpdateEngine:
     """
-    The HSU brain. One singleton  -  import `updater` from pyUltroid.updater.
+    The HSU engine owned by the process-wide updater facade.
 
     Usage:
-        from pyUltroid.updater import updater
+        from pyUltroid.updater import up
 
         # Check for updates (non-destructive)
-        diff = await updater.check()
+        diff = await up.check()
         if diff and diff.has_changes:
             LOGS.info(diff.changelog_text())
-            await updater.apply(diff)
+            await up.apply(diff)
     """
 
     def __init__(self, git: GitManager = None, **kw):
@@ -207,7 +207,7 @@ class UpdateEngine:
         reloaded = []
         try:
             from pyUltroid._core.loader import reload_plugin_async
-            from pyUltroid.tracer import plugin_index
+            from pyUltroid.tracer import tr
         except ImportError:
             LOGS.error("[HSU:ENGINE] Cannot import loader for hot-reload.")
             return reloaded
@@ -222,7 +222,7 @@ class UpdateEngine:
                 name = Path(rel).stem
                 result = await reload_plugin_async(name, path=rel)
                 if result.get("success"):
-                    plugin_index.index_plugin(name, rel)
+                    tr.index.index_plugin(name, rel)
                     reloaded.append(name)
                     LOGS.info(f"[HSU:ENGINE] Hot-reloaded: {name}")
                 else:
@@ -516,5 +516,4 @@ class UpdateEngine:
                 self._state.status = "failed"
                 self._state.error = result.stderr
             return self._state
-
 

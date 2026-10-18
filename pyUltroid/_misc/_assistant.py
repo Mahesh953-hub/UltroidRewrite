@@ -34,11 +34,12 @@ from typing import Any, ClassVar, Final
 
 from telethon.errors import QueryIdInvalidError
 from telethon.events import CallbackQuery, InlineQuery, NewMessage
-from custom.tg import ikm
-from custom.fmt import fmtmsg
 from telethon.tl.types import InputWebDocument
 
-from .. import LOGS, asst, udB, ultroid_bot
+from custom.fmt import fmtmsg
+from custom.tg import ikm
+
+from .. import LOGS, asst, ultroid_bot
 from ..fns import fns
 from . import append_or_update, owner_and_sudos
 
@@ -90,8 +91,16 @@ BRAND = Branding()
 
 #: longest first line still treated as a heading
 MAX_HEADING: Final[int] = 40
-#: prefixes that mean "the caller already produced HTML"
-HTML_PREFIXES: Final[tuple[str, ...]] = ("<b>", "<div", "<code>")
+#: valid rich-text tags that mean "the caller already produced HTML"
+HTML_PREFIXES: Final[tuple[str, ...]] = (
+    "<a", "<b", "<blockquote", "<br", "<code", "<del", "<div", "<em",
+    "<i", "<ins", "<li", "<ol", "<p", "<pre", "<s", "<span", "<strong",
+    "<tg-emoji", "<u", "<ul",
+)
+HTML_TAG_RE: Final[re.Pattern[str]] = re.compile(
+    r"</?(?:a|b|blockquote|br|code|del|div|em|i|ins|li|ol|p|pre|s|span|strong|tg-emoji|u|ul)\b[^<>]*>",
+    re.IGNORECASE,
+)
 #: style probes that identify a fork "styled" button
 STYLE_FIELDS: Final[tuple[str, ...]] = ("bg_primary", "bg_danger", "bg_success", "icon")
 
@@ -186,7 +195,11 @@ class MessageFormatter:
 
     @staticmethod
     def already_html(text: str) -> bool:
-        return text.startswith(HTML_PREFIXES)
+        if not isinstance(text, str):
+            return False
+        # Markup can be preceded by whitespace or plain text, and tags such
+        # as <strong> are just as valid as the original <b>/<code> subset.
+        return bool(HTML_TAG_RE.search(text.lstrip()))
 
     def format(self, text: Any, heading_default: str = "Assistant") -> Any:
         """Promote the first line to a heading and wrap the rest.
@@ -195,7 +208,7 @@ class MessageFormatter:
         heading: the whole text becomes the body and the default heading is
         used. Already-HTML text is returned untouched.
         """
-        if not text:
+        if not isinstance(text, str) or not text:
             return text
         if self.already_html(text):
             return text
@@ -205,6 +218,12 @@ class MessageFormatter:
         if len(head) > MAX_HEADING:
             return self._build(heading_default, msgs=text)
         return self._build(head, msgs=body)
+
+
+class _AssistantRichText(str):
+    """Mark assistant HTML as RichMessage content for the custom client."""
+
+    __rich_format__ = "html"
 
 
 class AssistantEventPatcher:
@@ -241,12 +260,21 @@ class AssistantEventPatcher:
         async def patched(text=None, *args, **kwargs):
             if "buttons" in kwargs:
                 kwargs["buttons"] = buttons.map(kwargs["buttons"])
+            if text is None or not isinstance(text, str):
+                kwargs.pop("parse_mode", None)
+                return await original(text, *args, **kwargs)
+            if getattr(text, "__rich_format__", None) is not None:
+                kwargs.pop("parse_mode", None)
+                return await original(text, *args, **kwargs)
             if formatter.caller_chose_parse_mode(kwargs):
                 return await original(text, *args, **kwargs)
-            kwargs["parse_mode"] = "html"
-            return await original(
-                formatter.format(text, heading_default), *args, **kwargs
-            )
+            kwargs.pop("parse_mode", None)
+            formatted = formatter.format(text, heading_default)
+            if isinstance(formatted, str) and getattr(
+                formatted, "__rich_format__", None
+            ) is None:
+                formatted = _AssistantRichText(formatted)
+            return await original(formatted, *args, **kwargs)
 
         return patched
 
@@ -338,7 +366,7 @@ def callback(data=None, from_users=[], admins=False, owner=False, **kwargs):
             if owner and event.sender_id not in owner_and_sudos():
                 return await event.answer("Not allowed!")
             try:
-                _patch_assistant_event(event, "Settings Callback")
+                _patch_assistant_event(event, "Assistant")
                 await func(event)
             except Exception as er:
                 LOGS.exception(er)
@@ -348,18 +376,48 @@ def callback(data=None, from_users=[], admins=False, owner=False, **kwargs):
     return ultr
 
 
+async def _answer_inline_error(event, query, traceback_text):
+    """Answer one failed inline query with a native rich article, never a fallback."""
+    from .._core.events import InlineResultBuilder
+    from .._core.richmsg import RichBlocks
+
+    payload = (
+        RichBlocks()
+        .header("Inline error", level=2)
+        .paragraph(f"Query: {query}")
+        .paragraph("Traceback")
+        .code(traceback_text, "python")
+    )
+    result = await InlineResultBuilder(event).article_rich(
+        title="Unhandled inline exception",
+        payload=payload,
+        format="html",
+        buttons=ikm(
+            [[("Report", "url", "https://t.me/UltroidSupportChat", "green")]]
+        ),
+    )
+    return await event.answer([result])
+
+
 def in_pattern(pattern=None, owner=False, **kwargs):
     """Assistant's inline decorator."""
 
     def don(func):
         async def wrapper(event):
             if owner and event.sender_id not in owner_and_sudos():
+                from .._core.events import InlineResultBuilder
+                from .._core.richmsg import coerce_to_rich_markup
+
+                markup = coerce_to_rich_markup(BRAND.msg, parse_mode="v2")
+                if markup is None:
+                    raise RuntimeError("could not convert the inline access card to rich HTML")
                 res = [
-                    await event.builder.article(
+                    await InlineResultBuilder(event).article_rich(
                         title="Ultroid Userbot",
+                        payload=markup.text,
                         url="https://t.me/TeamUltroid",
                         description="(c) TeamUltroid",
-                        text=BRAND.msg,
+                        format="html",
                         thumb=InputWebDocument(
                             "https://graph.org/file/dde85d441fa051a0d7d1d.jpg",
                             0,
@@ -380,37 +438,18 @@ def in_pattern(pattern=None, owner=False, **kwargs):
                 pass
             except Exception as er:
                 err = format_exc()
-
-                def error_text():
-                    return f"**#ERROR #INLINE**\n\nQuery: `{asst.me.username} {pattern}`\n\n**Traceback:**\n`{format_exc()}`"
-
                 LOGS.exception(er)
                 try:
-                    await event.answer(
-                        [
-                            await event.builder.article(
-                                title="Unhandled Exception has Occured!",
-                                text=error_text(),
-                                buttons=ikm(
-                                    [
-                                        [
-                                            (
-                                                "Report",
-                                                "url",
-                                                "https://t.me/UltroidSupportChat",
-                                                "green",
-                                            )
-                                        ]
-                                    ]
-                                ),
-                            )
-                        ]
+                    username = getattr(getattr(asst, "me", None), "username", "")
+                    await _answer_inline_error(
+                        event,
+                        f"{username} {pattern}".strip(),
+                        err,
                     )
                 except QueryIdInvalidError:
                     LOGS.exception(err)
                 except Exception as er:
                     LOGS.exception(er)
-                    await asst.send_message(udB.get_key("LOG_CHANNEL"), error_text())
 
         asst.add_event_handler(wrapper, InlineQuery(pattern=pattern, **kwargs))
 

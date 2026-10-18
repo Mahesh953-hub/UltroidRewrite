@@ -41,7 +41,7 @@ import time
 import zipfile
 
 from custom.fmt import fmtmsg
-from custom.rich import parse_rich
+from custom.entities import parse_rich
 from pyUltroid.fns import fns
 from . import (
     HNDLR,

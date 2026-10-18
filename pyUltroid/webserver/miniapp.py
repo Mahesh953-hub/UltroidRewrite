@@ -47,7 +47,7 @@ THEMES: Final[tuple[str, ...]] = ("default", "dark")
 BUTTON_STYLES: Final[tuple[str, ...]] = ("classic", "styled")
 
 DEFAULT_THEME: Final[str] = "default"
-DEFAULT_BUTTON_STYLE: Final[str] = "classic"
+DEFAULT_BUTTON_STYLE: Final[str] = "styled"
 DEFAULT_CARDS: Final[bool] = True
 
 DEFAULT_MINIAPP_PORT: Final[int] = 7861

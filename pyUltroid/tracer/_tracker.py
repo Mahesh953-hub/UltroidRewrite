@@ -81,7 +81,13 @@ class TraceRecord:
         self.duration_ms = (self.ended_at - self.started_at) * 1000
         self.success = success
         if exc:
-            self.exception = traceback.format_exc()[-2000:]
+            try:
+                from pyUltroid._core.notices import sanitize_error_text
+
+                rendered = sanitize_error_text(traceback.format_exc())
+            except Exception:
+                rendered = f"{type(exc).__name__}: [exception details unavailable]"
+            self.exception = rendered[-2000:]
             self.exc_type = type(exc).__name__
 
     def to_dict(self) -> dict:
@@ -414,8 +420,10 @@ def trace_handler(func):
             user_id = event.sender_id or 0
             chat_id = event.chat_id or 0
             is_private = event.is_private
-            raw_text = (event.raw_text or "")[:200]
-        except Exception:
+            from pyUltroid._core.notices import sanitize_error_text
+
+            raw_text = sanitize_error_text(event.raw_text or "")[:200]
+        except Exception:  # noqa: BLE001 - execute only the repository wrapper AST in a fully mocked namespace
             user_id = chat_id = 0
             is_private = False
             raw_text = ""
@@ -447,7 +455,5 @@ def trace_handler(func):
             _set_trace(None)
             record = _live_tracker()
             asyncio.ensure_future(record.record(trace))
-
-
 
 

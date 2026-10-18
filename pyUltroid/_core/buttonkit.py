@@ -91,8 +91,8 @@ def confirm_cancel(
     confirm_data: str | bytes = "confirm",
     cancel_data: str | bytes = "cancel",
     *,
-    confirm_label: str = "✅ Confirm",
-    cancel_label: str = "❌ Cancel",
+    confirm_label: str = "Confirm",
+    cancel_label: str = "Cancel",
     confirm_preset: str = "confirm",
     cancel_preset: str = "cancel",
 ) -> list[list[Any]]:

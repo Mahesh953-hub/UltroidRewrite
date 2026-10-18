@@ -61,6 +61,10 @@ class Extender:
 #: The process-wide extender.
 ex = Extender()
 
+# Legacy loader and plugin call sites use ``hre`` as the resource manager.
+# Keep that API pointed at the manager owned by the unified extender.
+hre = ex.resources
+
 __all__ = [
 
     "Extender",

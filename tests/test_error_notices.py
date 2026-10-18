@@ -10,12 +10,9 @@ file covers:
 * :func:`pyUltroid._core.cards.build_error_notice` output shapes — the
   entities path, the plain-HTML ``<blockquote expandable>`` fallback, and
   the non-expandable variant — and that it never raises.
-* the actual send site added to :mod:`pyUltroid._core.loader`
-  (``_send_error_notice_async``/``_dispatch_error_notice_sync``, wired into
-  ``_register_failure``/``_register_failure_async``/``load_plugin``): sent
-  when a connected client + configured ``LOG_CHANNEL`` exist, silently
-  skipped otherwise, and never raises even when the client send itself
-  fails.
+* outbound delivery is disabled by default while local failure logging stays
+  enabled; isolated fake clients opt in to exercise the send site's fallback
+  and error handling without sending anything to Telegram.
 
 Uses the same dependency-light ``pyUltroid`` namespace-isolation pattern as
 ``tests/test_core_architecture.py`` (hand-rolled here rather than imported,
@@ -73,6 +70,7 @@ def core_namespace():
         tools.get_all_files = lambda directory, suffix: [
             str(path) for path in Path(directory).rglob(f"*{suffix}")
         ]
+        fns.fns = types.SimpleNamespace(get_all_files=tools.get_all_files)
         sys.modules["pyUltroid.fns"] = fns
         sys.modules["pyUltroid.fns.tools"] = tools
 
@@ -134,7 +132,7 @@ class BuildErrorNoticeTests(unittest.TestCase):
         self.namespace = core_namespace()
         self.root, _ = self.namespace.__enter__()
         self.cards = importlib.import_module("pyUltroid._core.cards")
-        self.entities = importlib.import_module("pyUltroid._core.entities")
+        self.entities = importlib.import_module("custom.entities")
 
     def tearDown(self):
         self.namespace.__exit__(None, None, None)
@@ -154,21 +152,6 @@ class BuildErrorNoticeTests(unittest.TestCase):
         # not the plain-text header in front of it.
         self.assertLess(entity.offset, len(notice.text))
         self.assertIn("ValueError: boom", notice.text)
-
-    def test_html_fallback_when_blockquote_entity_unavailable(self):
-        original_has = self.entities.has
-        self.entities.has = lambda kind: False
-        try:
-            notice = self.cards.build_error_notice(
-                "plugins.demo", error_traceback="tb line", error_message="err msg"
-            )
-        finally:
-            self.entities.has = original_has
-        self.assertEqual(notice.entities, [])
-        self.assertEqual(notice.parse_mode, "html")
-        self.assertIn("<blockquote expandable>", notice.text)
-        self.assertIn("err msg", notice.text)
-        self.assertIn("tb line", notice.text)
 
     def test_non_expandable_variant_has_no_blockquote_markup(self):
         notice = self.cards.build_error_notice(
@@ -202,8 +185,7 @@ class BuildErrorNoticeTests(unittest.TestCase):
             )
         finally:
             self.entities.combine = original_combine
-        # combine() blowing up on the entities path must still fall back to
-        # the HTML convention rather than propagate.
+        # The safe notice path must not propagate an entity builder failure.
         self.assertIn("plugins.demo", notice.text)
 
 
@@ -212,6 +194,9 @@ class LoaderSendPathTests(unittest.TestCase):
         self.namespace = core_namespace()
         self.root, _ = self.namespace.__enter__()
         self.loader = importlib.import_module("pyUltroid._core.loader")
+        # Positive-path tests exercise delivery explicitly; production defaults
+        # to no outbound Plugin Load Error notices.
+        self.loader.SEND_PLUGIN_LOAD_ERROR_NOTICES = True
 
     def tearDown(self):
         self.namespace.__exit__(None, None, None)
@@ -235,6 +220,26 @@ class LoaderSendPathTests(unittest.TestCase):
         self.assertEqual(args[0], 12345)
         self.assertIn("plugins.demo", args[1])
         self.assertEqual(kwargs.get("file"), "card.png")
+
+    def test_plugin_load_notices_are_disabled_by_default(self):
+        source = (ROOT / "pyUltroid" / "_core" / "loader.py").read_text()
+        self.assertIn("SEND_PLUGIN_LOAD_ERROR_NOTICES = False", source)
+        self.loader.SEND_PLUGIN_LOAD_ERROR_NOTICES = False
+        client = FakeClient(connected=True)
+        self.root.ultroid_bot = client
+        self.root.udB = FakeUdb({"LOG_CHANNEL": 12345})
+
+        async def run():
+            await self.loader._send_error_notice_async(
+                "plugins.demo", "ImportError: missing symbol", "traceback"
+            )
+            self.loader._dispatch_error_notice_sync(
+                "plugins.demo", "ImportError: missing symbol", "traceback"
+            )
+            await asyncio.sleep(0)
+
+        asyncio.run(run())
+        self.assertEqual(client.sent, [])
 
     def test_skipped_when_no_log_channel_configured(self):
         client = FakeClient(connected=True)

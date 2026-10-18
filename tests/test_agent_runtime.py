@@ -65,6 +65,70 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         caps = fake.calls[0]["caps"]
         self.assertNotIn("shell_exec", caps)
 
+    async def test_runtime_timeout_cancels_hung_agent_and_returns_timeout(self):
+        class HangingAgent:
+            def __init__(self):
+                self.started = asyncio.Event()
+                self.cancelled = False
+
+            async def respond(self, **kwargs):
+                self.started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.cancelled = True
+                    raise
+
+        fake = HangingAgent()
+        rt = AgentRuntime(fake)
+        response = await rt.runtime_run(
+            AgentRequest(
+                prompt="hang safely",
+                chat_id=44,
+                origin=".agent",
+                use_tools=False,
+                timeout_seconds=0.01,
+            )
+        )
+        self.assertTrue(fake.cancelled)
+        self.assertFalse(response.ok)
+        self.assertEqual(response.provider, "runtime")
+        self.assertEqual(response.model, "timeout")
+        self.assertIn("time limit", response.content)
+
+    async def test_external_cancellation_is_not_misreported_as_timeout(self):
+        class HangingAgent:
+            def __init__(self):
+                self.started = asyncio.Event()
+                self.cancelled = False
+
+            async def respond(self, **kwargs):
+                self.started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.cancelled = True
+                    raise
+
+        fake = HangingAgent()
+        rt = AgentRuntime(fake)
+        task = asyncio.create_task(
+            rt.runtime_run(
+                AgentRequest(
+                    prompt="cancel safely",
+                    chat_id=45,
+                    origin=".agent",
+                    use_tools=False,
+                    timeout_seconds=30,
+                )
+            )
+        )
+        await fake.started.wait()
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(fake.cancelled)
+
 
 if __name__ == "__main__":
     unittest.main()

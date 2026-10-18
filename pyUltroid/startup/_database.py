@@ -126,7 +126,8 @@ class _BaseDatabase:
 
 class MongoDB(_BaseDatabase):
     def __init__(self, key, dbname="UltroidDB"):
-        self.dB = MongoClient(key, serverSelectionTimeoutMS=5000)
+        # Allow short Atlas primary elections to finish before startup fails.
+        self.dB = MongoClient(key, serverSelectionTimeoutMS=30_000)
         self.db = self.dB[dbname]
         super().__init__()
 

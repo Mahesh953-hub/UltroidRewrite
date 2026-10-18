@@ -90,6 +90,15 @@ def test_the_process_agent_is_one_instance():
     assert isinstance(agent(), Agent)
 
 
+def test_legacy_provider_registry_facade_uses_the_process_agent():
+    from pyUltroid.agent import registry
+
+    provider = registry.by_name("gemini")
+    assert provider is agent().provider_by_name("gemini")
+    registry.register(provider)
+    assert registry.by_name("gemini") is provider
+
+
 def test_there_are_no_module_singletons_left():
     from pyUltroid.agent import _config, _lifecycle, _mini, _providers, _sessions
 

@@ -210,6 +210,16 @@ def _worker_main() -> int:
             return results
 
         report = ultroid_bot.run_in_loop(run())
+        from pyUltroid.dB._core import HELP
+
+        report["help_counts"] = {
+            "Official": len(HELP.get("Official"))
+            if isinstance(HELP.get("Official"), dict)
+            else 0,
+            "Assistant": len(HELP.get("Assistant"))
+            if isinstance(HELP.get("Assistant"), dict)
+            else 0,
+        }
     except Exception:  # noqa: BLE001 - surface the crash to the parent test
         report = {"fatal": traceback.format_exc()[-3000:]}
     print(SENTINEL + json.dumps(report))
@@ -226,7 +236,14 @@ def load_report(repo_root: Path) -> dict:
         text=True,
         timeout=600,
     )
-    line = next((l for l in proc.stdout.splitlines() if l.startswith(SENTINEL)), None)
+    line = next(
+        (
+            output_line
+            for output_line in proc.stdout.splitlines()
+            if output_line.startswith(SENTINEL)
+        ),
+        None,
+    )
     assert line is not None, (
         "plugin-load worker produced no report line "
         f"(exit={proc.returncode})\n--- stdout tail ---\n{proc.stdout[-3000:]}"
@@ -245,6 +262,13 @@ class TestPluginLoadBaseline:
         assert tree["loaded"] >= LOADED_FLOOR["plugins"], (
             f"plugins loaded {tree['loaded']} < baseline {LOADED_FLOOR['plugins']}"
             f"\nerrors: {_format_errors(tree)}"
+        )
+
+    def test_loaded_official_plugins_have_help_entries(self, load_report):
+        loaded = load_report["plugins"]["loaded"]
+        indexed = load_report["help_counts"]["Official"]
+        assert indexed >= loaded, (
+            f"official plugins loaded {loaded}, but only {indexed} appear in HELP"
         )
 
     def test_assistant_loaded_never_below_baseline(self, load_report):

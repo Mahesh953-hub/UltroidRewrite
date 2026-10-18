@@ -5,22 +5,7 @@
 # PLease read the GNU Affero General Public License in
 # <https://github.com/TeamUltroid/pyUltroid/blob/main/LICENSE>.
 
-"""FastAPI application for the SarahUB web setup server.
-
-Full narrative: see docs/HANDBOOK.md (module narratives appendix).
-
-The factory used to be one 370-line function holding fifteen nested
-closures, which made the state it touched invisible and untestable. It is
-now three classes with distinct jobs:
-
-* :class:`SseFrame` builds one server-sent-event frame. It is a value
-  object, not a service.
-* :class:`LoginErrorMapper` is a pure Telethon-exception -> HTTP mapping.
-  It holds no state at all, so it can be exercised without a client.
-* :class:`SetupApplication` owns the app and the routes. Each route is a
-  real method, and the per-instance collaborators (``state``, broker, limiters)
-  are attributes rather than closure cells.
-"""
+"""FastAPI application factory and routes for the setup server."""
 
 from __future__ import annotations
 
@@ -39,13 +24,12 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.datastructures import Headers, QueryParams
-
 from telethon import errors as tl_errors
 
 from .bootstrap import SetupBootstrap
 from .envfile import REPO_ROOT, EnvFile
-from .logs import LogStreamHub
 from .login import LoginManager, LoginSessionUnknown
+from .logs import LogStreamHub
 from .security import AUTHORITY, RateLimiter, TokenAuthority
 from .state import SetupState
 
@@ -55,6 +39,7 @@ STATIC_DIR: Final[Path] = REPO_ROOT / "resources" / "web"
 
 BOT_TOKEN_RE: Final[re.Pattern[str]] = re.compile(r"^\d+:[A-Za-z0-9_-]{30,}$")
 MAX_QR_CYCLES: Final[int] = 8  # expiry/recreate cycles before giving up
+MAX_REQUEST_BODY_BYTES: Final[int] = 1024 * 1024
 
 API_HASH_MIN_LENGTH: Final[int] = 8
 LOG_KEEPALIVE_SECONDS: Final[float] = 15.0
@@ -148,6 +133,45 @@ class TokenGateMiddleware:
             if not self.authority.verify(provided, self.token):
                 await unauthorized()(scope, receive, send)
                 return
+            declared_length = headers.get("content-length")
+            if declared_length:
+                try:
+                    if int(declared_length) > MAX_REQUEST_BODY_BYTES:
+                        await JSONResponse(
+                            {"detail": "request body too large"}, status_code=413
+                        )(scope, receive, send)
+                        return
+                except ValueError:
+                    pass
+
+            body_messages = []
+            body_size = 0
+            while True:
+                message = await receive()
+                body_messages.append(message)
+                if message["type"] != "http.request":
+                    break
+                body_size += len(message.get("body", b""))
+                if body_size > MAX_REQUEST_BODY_BYTES:
+                    await JSONResponse(
+                        {"detail": "request body too large"}, status_code=413
+                    )(scope, receive, send)
+                    return
+                if not message.get("more_body", False):
+                    break
+
+            replay_index = 0
+
+            async def replay_receive():
+                nonlocal replay_index
+                if replay_index < len(body_messages):
+                    message = body_messages[replay_index]
+                    replay_index += 1
+                    return message
+                return await receive()
+
+            await self.app(scope, replay_receive, send)
+            return
         await self.app(scope, receive, send)
 
 
@@ -175,7 +199,11 @@ class LoginErrorMapper:
                 "login code expired  -  request a new one",
             ),
             (tl_errors.PasswordHashInvalidError, 400, "invalid 2FA password"),
-            (tl_errors.ApiIdInvalidError, 400, "API_ID/API_HASH combination is invalid"),
+            (
+                tl_errors.ApiIdInvalidError,
+                400,
+                "API_ID/API_HASH combination is invalid",
+            ),
         )
 
     def log(self, exc: Exception) -> None:
@@ -203,9 +231,7 @@ class LoginErrorMapper:
 
 def unauthorized() -> JSONResponse:
     """The one 401 body every gated route returns."""
-    return JSONResponse(
-        {"detail": "invalid or missing setup token"}, status_code=401
-    )
+    return JSONResponse({"detail": "invalid or missing setup token"}, status_code=401)
 
 
 # -- the application -----------------------------------------------------
@@ -311,9 +337,7 @@ class SetupApplication:
         updates: dict[str, Any] = {"API_ID": api_id, "API_HASH": api_hash}
         if bot_token:
             updates["BOT_TOKEN"] = bot_token
-        elif not (
-            self.env.read().get("BOT_TOKEN") or os.environ.get("BOT_TOKEN")
-        ):
+        elif not (self.env.read().get("BOT_TOKEN") or os.environ.get("BOT_TOKEN")):
             updates["BOT_TOKEN"] = ""
 
         if log_channel is None and not (
@@ -416,11 +440,11 @@ class SetupApplication:
     def _register_state(self, app: FastAPI) -> None:
         index = self._index
 
-        @app.get("/")
+        @app.get("/", response_model=None)
         def root() -> Response | JSONResponse:
             return index()
 
-        @app.get("/api/state")
+        @app.get("/api/state", response_model=None)
         def api_state(request: Request) -> dict | JSONResponse:
             if not self.authorized(request):
                 return unauthorized()
@@ -448,14 +472,14 @@ class SetupApplication:
             if invalid is not None:
                 return invalid
             self.save_credentials(
-                payload.api_id, api_hash, (payload.bot_token or "").strip() or None,
+                payload.api_id,
+                api_hash,
+                (payload.bot_token or "").strip() or None,
                 payload.log_channel,
             )
             return {"ok": True}
 
-    def _reject_keys(
-        self, payload: KeysPayload, api_hash: str
-    ) -> JSONResponse | None:
+    def _reject_keys(self, payload: KeysPayload, api_hash: str) -> JSONResponse | None:
         """422 for each invalid field, in the order the UI reports them."""
         if payload.api_id <= 0:
             return JSONResponse(
@@ -502,9 +526,7 @@ class SetupApplication:
                 return self._too_many()
             manager = self.state.login_manager
             if manager is None:
-                return JSONResponse(
-                    {"detail": "no login in progress"}, status_code=400
-                )
+                return JSONResponse({"detail": "no login in progress"}, status_code=400)
             self.authority.redactor.add(payload.password)
             try:
                 outcome = await manager.submit_code(
@@ -633,7 +655,9 @@ class SetupApplication:
             self.store_session(result["session_string"])
             yield SseFrame("success", {}).render()
             return
-        yield SseFrame("error", {"detail": "too many QR expiries  -  start over"}).render()
+        yield SseFrame(
+            "error", {"detail": "too many QR expiries  -  start over"}
+        ).render()
 
     # -- routes: live logs
 
@@ -694,9 +718,7 @@ class SetupApplication:
 
     @staticmethod
     def _unknown_login() -> JSONResponse:
-        return JSONResponse(
-            {"detail": "unknown or expired login_id"}, status_code=404
-        )
+        return JSONResponse({"detail": "unknown or expired login_id"}, status_code=404)
 
     def __repr__(self) -> str:
         return f"<SetupApplication token={self.state.token[:4]}…>"

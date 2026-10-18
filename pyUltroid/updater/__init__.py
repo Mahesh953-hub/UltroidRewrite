@@ -1,7 +1,8 @@
 # Public API for the Hybrid Update System.
 #
-#   from pyUltroid.updater import updater
-#   from pyUltroid.updater import git, DiffResult, UpdateState
+#   from pyUltroid.updater import up, DiffResult, UpdateState
+#   up.git exposes repository operations; up.engine exposes update lifecycle.
+#   Legacy ``git`` / ``updater`` imports remain aliases to those same instances.
 
 from ._git import (
     CommitRecord,
@@ -49,12 +50,17 @@ class Updates:
 
 #: The process-wide updater.
 up = Updates()
+# Backwards-compatible exports for callers written before the unified ``up`` API.
+# These must remain aliases, not fresh instances, so all callers share state.
+updater = up.engine
+git = up.git
 
 __all__ = [
-
     "Updates",
     "up",
-        # Data types
+    "updater",
+    "git",
+    # Data types
     "DiffResult",
     "UpdateState",
     "CommitRecord",

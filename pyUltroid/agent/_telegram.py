@@ -20,13 +20,16 @@ SarahUB's own builders so agent code never constructs a raw TL button.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Final, Sequence
 
 __all__ = [
     "BUTTON_STYLES",
     "entities_of",
     "inline_rows",
+    "public_text",
     "raw_message",
+    "rich_output",
     "row_of",
     "text_of",
     "unwrap_pair",
@@ -99,6 +102,48 @@ def raw_message(message: Any) -> str:
     if isinstance(message, str):
         return message
     return text_of(message)
+
+
+_RICH_HTML_TAG = re.compile(
+    r"(?is)</?(?:html|body|p|div|h[1-6]|b|strong|i|em|u|s|del|ins|"
+    r"blockquote|ul|ol|li|table|caption|thead|tbody|tfoot|tr|td|th|details|summary|button|"
+    r"pre|code|a|br|hr|span|tg-spoiler|tg-emoji)\b[^>]*>"
+)
+_TOOL_TRACE_RE = re.compile(
+    r"(?is)(?:\[\[\s*tool_calls?\s*\]\]|<\|tool_calls?\|>|<tool_calls?>|"
+    r"(?:^|\n)\s*tool_calls?\s*[:=]).*"
+)
+
+
+def public_text(value: Any) -> str:
+    """Remove a serialized tool-protocol tail from an agent response."""
+    text = str(value or "").strip()
+    match = _TOOL_TRACE_RE.search(text)
+    return text[: match.start()].strip() if match else text
+
+
+def rich_output(value: Any):
+    """Preserve an agent's HTML/Markdown answer as a native RichMarkup value.
+
+    Explicit whole-response ``html``/``md`` fences are unwrapped. Markdown
+    code blocks are excluded from HTML detection so code samples are not
+    mistaken for message markup. Plain text is treated as Markdown because it
+    is valid unformatted Markdown and remains safe in the fallback renderer.
+    """
+    from pyUltroid._core.richmsg import RichMarkup
+
+    text = str(value or "").strip()
+    format = None
+    wrapper = re.fullmatch(
+        r"```(html|md|markdown)[ \t]*\n([\s\S]*?)\n```", text, re.IGNORECASE
+    )
+    if wrapper:
+        text = wrapper.group(2).strip()
+        format = "html" if wrapper.group(1).lower() == "html" else "markdown"
+    if format is None:
+        probe = re.sub(r"```[\s\S]*?```|`[^`]*`", "", text)
+        format = "html" if _RICH_HTML_TAG.search(probe) else "markdown"
+    return RichMarkup(text, format=format)
 
 
 def inline_rows(
@@ -215,9 +260,9 @@ def _is_built_button(cell: Any) -> bool:
     is not a sequence and the tuple handling above would corrupt it.
     """
     from telethon.tl.custom import Button as _Button
-    from telethon.tl.types import KeyboardButton, KeyboardInlineButton
+    from telethon.tl.types import KeyboardButton
 
-    if isinstance(cell, (KeyboardButton, KeyboardInlineButton)):
+    if isinstance(cell, KeyboardButton):
         return True
     if isinstance(cell, _Button):
         return True

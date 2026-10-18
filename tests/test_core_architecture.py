@@ -12,7 +12,7 @@ import types
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from telethon import TelegramClient
 from telethon.tl import types as tl_types
@@ -90,6 +90,7 @@ class CoreArchitectureTests(unittest.TestCase):
         self.namespace = core_namespace()
         self.root, self.database = self.namespace.__enter__()
         self.loader = importlib.import_module("pyUltroid._core.loader")
+        self.runtime = importlib.import_module("pyUltroid.ultroid")
         self.client = importlib.import_module("pyUltroid._core.client")
         self.cards = importlib.import_module("pyUltroid._core.cards")
         self.events = importlib.import_module("pyUltroid._core.events")
@@ -327,8 +328,13 @@ class CoreArchitectureTests(unittest.TestCase):
 
         ib = self.events.InlineResultBuilder(FakeEvent())
         result = asyncio.run(ib.article(title="T", text="x"))
-        self.assertEqual(result[0], "article")
-        self.assertEqual(calls["article"], {"title": "T", "text": "x"})
+        self.assertIsInstance(result, tl_types.InputBotInlineResult)
+        self.assertEqual(result.title, "T")
+        self.assertIsInstance(
+            result.send_message, tl_types.InputBotInlineMessageRichMessage
+        )
+        self.assertEqual(result.send_message.rich_message.html, "x")
+        self.assertNotIn("article", calls)
         asyncio.run(
             ib.answer(
                 [1, 2, 3],
@@ -399,12 +405,15 @@ class CoreArchitectureTests(unittest.TestCase):
             registry.candidates("afk"), ("assistant.manager.afk", "plugins.afk")
         )
         self.assertIsNone(registry.get("afk"))
-        old = self.loader.registry
-        self.loader.registry = registry
+        core = self.runtime.core
+        old_registry = core.registry
+        core.registry = registry
         try:
-            result = self.loader.AsyncPluginLoader()._do_unload("afk")
+            result = asyncio.run(core.loader.unload_plugin("afk"))
         finally:
-            self.loader.registry = old
+            core.registry = old_registry
+            registry.unregister("plugins.afk")
+            registry.unregister("assistant.manager.afk")
         self.assertFalse(result["success"])
         self.assertEqual(result["candidates"], ["assistant.manager.afk", "plugins.afk"])
 
@@ -425,10 +434,12 @@ class CoreArchitectureTests(unittest.TestCase):
             path = Path(directory, "tracked.py")
             path.write_text("pass\n")
             manifest = asyncio.run(
-                self.loader.AsyncPluginLoader().load_plugin(str(path), func=imported)
+                self.runtime.core.loader.load_plugin(str(path), func=imported)
             )
         self.assertEqual(len(manifest.handlers), 1)
-        outcome = self.loader.AsyncPluginLoader()._do_unload(manifest.name)
+        outcome = asyncio.run(
+            self.runtime.core.loader.unload_plugin(manifest.name)
+        )
         self.assertTrue(outcome["success"])
         self.assertEqual(len(client.removed), 1)
 
@@ -444,14 +455,16 @@ class CoreArchitectureTests(unittest.TestCase):
                 self.data[key] = value
 
         self.root.udB = DB()
-        self.assertEqual(self.loader._load_errored_paths(), ["plugins/retry.py"])
+        core_loader = self.runtime.core.loader
+        self.assertEqual(core_loader.load_errored_paths(), ["plugins/retry.py"])
         with patch.object(
-            self.loader._default_loader,
+            core_loader,
             "load_plugin",
+            new_callable=AsyncMock,
             return_value=types.SimpleNamespace(is_active=True),
         ) as load:
             asyncio.run(
-                self.loader.retry_persisted_errors(
+                core_loader.retry_persisted_errors(
                     max_retries=1, func=lambda _: types.SimpleNamespace()
                 )
             )
@@ -490,12 +503,17 @@ class CoreArchitectureTests(unittest.TestCase):
         self.assertFalse(registry.register(second))
         self.assertIs(registry.get("plugins.same"), first)
 
-    def test_core_package_is_lazy(self):
+    def test_core_package_binds_subsystem_exports_eagerly(self):
         for name in list(sys.modules):
             if name.startswith("pyUltroid._core"):
                 sys.modules.pop(name)
         core = importlib.import_module("pyUltroid._core")
-        self.assertEqual(core.__all__, ())
+        self.assertIn("QueueManager", core.__all__)
+        self.assertIn("UploadResult", core.__all__)
+        self.assertTrue(hasattr(core, "QueueManager"))
+        self.assertTrue(hasattr(core, "UploadResult"))
+        self.assertIn("pyUltroid._core.webupload", sys.modules)
+        self.assertNotIn("__getattr__", core.__dict__)
         self.assertNotIn("pyUltroid._core.cards", sys.modules)
 
     def test_cards_return_none_when_pillow_is_unavailable(self):

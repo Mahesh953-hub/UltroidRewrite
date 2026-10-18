@@ -694,8 +694,9 @@ async def emoji_inline(event):
         pack = it.get("pack") or "—"
         author = it.get("author") or "—"
         body = f"{glyph}\nDoc id: {doc_id}\nPack: {pack}\nAuthor: {author}"
+        copy_row = ikm([("📋 Copy doc id", "copy", str(doc_id))])[0]
         btns = [
-            [types.KeyboardButtonCopy(text="📋 Copy doc id", copy_text=str(doc_id))],
+            copy_row,
             again_btn,
         ]
         art = await builder.article(

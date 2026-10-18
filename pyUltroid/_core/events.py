@@ -10,10 +10,9 @@ Full narrative: see docs/HANDBOOK.md (module narratives appendix)."""
 
 from __future__ import annotations
 
-import inspect
 import time
-from typing import Any, Dict, List, Optional
 from collections.abc import Sequence
+from typing import Any
 
 from telethon import utils
 
@@ -38,9 +37,6 @@ DEFAULT_FAREWELL = "👋 Goodbye {name}, **{chat}** will miss you!"
 
 #: Telegram caps inline answers at 50 results per response.
 _PER_PAGE = 50
-_RESULT_TYPES = ("article", "photo", "gif", "video", "audio", "voice", "document")
-
-
 class _SafeDict(dict):
     """Leave unknown ``{placeholders}`` intact instead of raising ``KeyError``."""
 
@@ -137,63 +133,34 @@ class InlineResultBuilder:
             self._event = None
             self._builder = event_or_builder
 
-    async def article(self, **kwargs):
-        return await self._make("article", kwargs)
-
-    async def photo(self, **kwargs):
-        return await self._make("photo", kwargs)
-
-    async def gif(self, **kwargs):
-        return await self._make("gif", kwargs)
-
-    async def video(self, **kwargs):
-        return await self._make("video", kwargs)
-
-    async def audio(self, **kwargs):
-        return await self._make("audio", kwargs)
-
-    async def voice(self, **kwargs):
-        return await self._make("voice", kwargs)
-
-    async def document(self, **kwargs):
-        return await self._make("document", kwargs)
-
-    def has(self, kind: str) -> bool:
-        """Whether ``kind`` can be built here (native builder, else the gap set)."""
-        if kind not in _RESULT_TYPES:
-            return False
-        if getattr(self._builder, kind, None) is not None:
-            return True
-        from . import inlineresults
-
-        return inlineresults.has(kind)
-
-    async def _make(self, kind: str, kwargs: dict):
-        method = getattr(self._builder, kind, None)
-        if method is not None:
-            try:
-                result = method(**kwargs)
-                if inspect.isawaitable(result):
-                    result = await result
-                return result
-            except Exception as e:
-                LOGS.error(f"[events] native {kind} result build failed: {e}")
-                return None
-
+    def _results(self):
         from .inlineresults import InlineResults
 
-        if not InlineResults(self._event or self._builder).has(kind):
-            LOGS.warning(f"[events] no builder supports the {kind!r} result type")
-            return None
-        try:
-            fallback = getattr(InlineResults(self._event or self._builder), kind)
-            result = fallback(**kwargs)
-            if inspect.isawaitable(result):
-                result = await result
-            return result
-        except Exception as e:
-            LOGS.error(f"[events] {kind} fallback result build failed: {e}")
-            return None
+        return InlineResults(self._event or self._builder)
+
+    async def article(self, *args, **kwargs):
+        return await self._results().article(*args, **kwargs)
+
+    async def article_rich(self, title: str, payload: Any, **kwargs):
+        return await self._results().article_rich(title, payload, **kwargs)
+
+    async def photo(self, **kwargs):
+        return await self._results().photo(**kwargs)
+
+    async def gif(self, **kwargs):
+        return await self._results().gif(**kwargs)
+
+    async def video(self, **kwargs):
+        return await self._results().video(**kwargs)
+
+    async def audio(self, **kwargs):
+        return await self._results().audio(**kwargs)
+
+    async def voice(self, **kwargs):
+        return await self._results().voice(**kwargs)
+
+    async def document(self, **kwargs):
+        return await self._results().document(**kwargs)
 
     @staticmethod
     def paginate(results: Sequence, page: int = 0, per_page: int = _PER_PAGE) -> list:

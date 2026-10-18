@@ -9,18 +9,18 @@ assistant's ``SetInlineBotResults`` is captured, and the user client's
 
 import asyncio
 import gc
-from types import MethodType, SimpleNamespace
 import unittest
 import weakref
+from types import MethodType, SimpleNamespace
 
-from telethon.errors.rpcerrorlist import BotInlineDisabledError
 from telethon import events
+from telethon.errors.rpcerrorlist import BotInlineDisabledError
 from telethon.tl import types
 from telethon.tl.custom.inlineresults import InlineResults as TLInlineResults
 
-from pyUltroid._core import pipeline as pipeline_mod
-from pyUltroid._core.entities import normalize_parsed, plain_text
+from custom.entities import normalize_parsed, plain_text
 from pyUltroid._core import instant as instant_mod
+from pyUltroid._core import pipeline as pipeline_mod
 from pyUltroid._core.inlineresults import InlineResults
 from pyUltroid._core.instant import (
     MAX_RESULTS,
@@ -261,12 +261,15 @@ class InstantResultBuildTests(InstantBase):
         spec = InstantResult(extra={"title": "From extra", "text": "Body"})
         result = self.build(spec)
         self.assertEqual(result.title, "From extra")
-        self.assertEqual(result.send_message.message, "Body")
+        self.assertEqual(
+            result.send_message.rich_message.html,
+            "Body",
+        )
 
     def test_extra_can_override_the_parse_mode(self):
         spec = InstantResult(title="t", text="*raw*", extra={"parse_mode": None})
         result = self.build(spec)
-        self.assertEqual(result.send_message.message, "*raw*")
+        self.assertEqual(result.send_message.rich_message.html, "*raw*")
 
     def test_extra_can_override_a_media_caption(self):
         photo = types.InputPhoto(id=1, access_hash=2, file_reference=b"")
@@ -354,13 +357,10 @@ class InlineResultsDelegationTests(InstantBase):
         with self.assertRaises(InlineResultError):
             run(results.cached_photo(photo, text="hi", buttons=["b"], id="fixed"))
 
-    def test_every_advertised_document_kind_has_a_method(self):
-        """``has()`` promised ``file`` while the wrapper did not exist."""
-        from pyUltroid._core import inlineresults as mod
-
-        for kind in mod._DOCUMENT_KINDS:
-            self.assertTrue(mod.InlineResults.has(kind), kind)
-            self.assertTrue(callable(getattr(mod.InlineResults, kind, None)), kind)
+    def test_named_document_builders_are_available_without_layer_probes(self):
+        for name in ("gif", "video", "audio", "voice", "sticker", "file"):
+            self.assertTrue(callable(getattr(InlineResults, name, None)), name)
+        self.assertFalse(hasattr(InlineResults, "has"))
 
     def test_a_file_result_is_built_as_a_document(self):
         recorded = {}
@@ -520,11 +520,7 @@ class InstantInlineRoundTripTests(InstantBase):
     def test_an_index_beyond_the_built_results_is_rejected(self):
         session, _bot, user = make_session()
         with self.assertRaises(InstantInlineError):
-            run(
-                session.show(
-                    FakeEvent(user, chat_id=1, message_id=2), index=3, fallback=False
-                )
-            )
+            run(session.show(FakeEvent(user, chat_id=1, message_id=2), index=3))
         session.close()
 
 
@@ -543,7 +539,7 @@ class InstantInlineRoutingTests(InstantBase):
             [InstantResult(title="x", text="x")], bot=bot, user=user
         )
         with self.assertRaises(InlineUnavailable):
-            run(session.show(FakeEvent(user, chat_id=1, message_id=2), fallback=False))
+            run(session.show(FakeEvent(user, chat_id=1, message_id=2)))
         self.assertFalse(session.open)
         self.assertEqual(len(pipeline_mod.pipeline_for(bot)), 0)
 
@@ -634,25 +630,29 @@ class InstantInlineRoutingTests(InstantBase):
 
 
 class InstantInlineFallbackTests(InstantBase):
-    def test_inline_unavailable_falls_back_to_eor_with_buttons(self):
+    def test_inline_unavailable_fails_closed_without_user_message(self):
         bot = FakeBot()
         user = FakeUser(bot, fail_with=BotInlineDisabledError(None))
         session = InstantInline(
             [InstantResult(title="T", text="body", buttons=["b"])], bot=bot, user=user
         )
         event = FakeEvent(user, chat_id=1, message_id=2)
-        run(session.show(event))
-        self.assertEqual(event.eor_calls[0][0], "body")
-        self.assertEqual(event.eor_calls[0][1]["buttons"], ["b"])
+        with self.assertRaises(InlineUnavailable):
+            run(session.show(event))
+        self.assertEqual(len(user.queries), 1, "inline query was attempted first")
+        self.assertEqual(user.sent, [], "no direct user message was sent")
+        self.assertEqual(event.eor_calls, [], "the trigger was not edited as the user")
+        self.assertFalse(session.open, "the one-shot route was retired")
 
-    def test_fallback_false_raises_instead(self):
+    def test_inline_disabled_fails_closed_by_default(self):
         bot = FakeBot()
         user = FakeUser(bot, fail_with=BotInlineDisabledError(None))
         session = InstantInline(
             [InstantResult(title="T", text="b")], bot=bot, user=user
         )
         with self.assertRaises(InlineUnavailable):
-            run(session.show(FakeEvent(user, chat_id=1, message_id=2), fallback=False))
+            run(session.show(FakeEvent(user, chat_id=1, message_id=2)))
+        self.assertEqual(user.sent, [])
 
     def test_a_missing_bot_is_reported_as_inline_unavailable(self):
         session = InstantInline(
@@ -842,7 +842,7 @@ class PipelineRegistryLeakTests(InstantBase):
 
 
 class FakeEvent:
-    """A trigger message good enough for ``show`` and the ``eor`` fallback."""
+    """A trigger message used by inline-result round-trip tests."""
 
     def __init__(self, client, chat_id, message_id):
         self.client = client

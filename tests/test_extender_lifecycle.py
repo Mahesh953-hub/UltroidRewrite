@@ -74,6 +74,7 @@ def core_namespace():
         tools.get_all_files = lambda directory, suffix: [
             str(path) for path in Path(directory).rglob(f"*{suffix}")
         ]
+        fns.fns = types.SimpleNamespace(get_all_files=tools.get_all_files)
         sys.modules["pyUltroid.fns"] = fns
         sys.modules["pyUltroid.fns.tools"] = tools
 
@@ -143,15 +144,25 @@ class ExtenderLifecycleTests(unittest.TestCase):
         self.namespace = core_namespace()
         self.root, self.database = self.namespace.__enter__()
         self.loader = importlib.import_module("pyUltroid._core.loader")
+        self.runtime = importlib.import_module("pyUltroid.ultroid")
+        self.core = self.runtime.core
+        self.extender_mod = importlib.import_module("pyUltroid.extender")
         self.manifest_mod = importlib.import_module("pyUltroid.extender._manifest")
-        self.manager_mod = importlib.import_module("pyUltroid.extender._manager")
         self.installer_mod = importlib.import_module("pyUltroid.extender._installer")
-        self.indexer_mod = importlib.import_module("pyUltroid.tracer._indexer")
-        self.hre = self.manager_mod.hre
-        self.registry = self.manifest_mod.manifest_registry
+        self.tracer_mod = importlib.import_module("pyUltroid.tracer")
+        self.hre = self.extender_mod.hre
+        self.registry = self.extender_mod.ex.manifests
+        self.installer_mod.installer = self.extender_mod.ex.packages
 
     def tearDown(self):
         self.namespace.__exit__(None, None, None)
+
+    def test_package_hre_alias_targets_resource_manager(self):
+        package = importlib.import_module("pyUltroid.extender")
+
+        self.assertIs(package.hre, package.ex.resources)
+        self.assertTrue(callable(package.hre.on_plugin_load))
+        self.assertTrue(callable(package.hre.on_plugin_unload_sync))
 
     # ── helpers ──────────────────────────────────────────────────────────
 
@@ -233,7 +244,7 @@ class ExtenderLifecycleTests(unittest.TestCase):
         self.assertTrue(manifest.is_active, manifest.error_info)
 
         with (
-            mock.patch.object(self.loader, "_default_loader", loader),
+            mock.patch.object(self.core, "loader", loader),
             mock.patch.object(
                 self.loader, "_func_for_path", lambda _p: (lambda _n: module)
             ),
@@ -527,7 +538,7 @@ class ExtenderLifecycleTests(unittest.TestCase):
     # ── W1-D.3: startup indexing ─────────────────────────────────────────
 
     def test_index_all_picks_up_loaded_plugins_only(self):
-        indexer = self.indexer_mod.plugin_index
+        indexer = self.tracer_mod.tr.index
         _, path = self._write_plugin(
             "from pyUltroid import ultroid_cmd\n\n"
             '@ultroid_cmd(pattern="fake")\n'
@@ -580,7 +591,7 @@ class ExtenderLifecycleTests(unittest.TestCase):
     # ── W1-D.4: confirm_unload user surface ──────────────────────────────
 
     def _register_fake_plugin(self, name="plugins.fake"):
-        self.loader.registry.register(
+        self.core.registry.register(
             self.loader.PluginManifest(
                 name=name, path="plugins/fake.py", status=self.loader.STATUS_ACTIVE
             )
@@ -602,7 +613,7 @@ class ExtenderLifecycleTests(unittest.TestCase):
             return message
 
         message = asyncio.run(scenario())
-        self.assertIsNone(self.loader.registry.get("plugins.fake"))
+        self.assertIsNone(self.core.registry.get("plugins.fake"))
         self.assertTrue(
             any("Unloaded `plugins.fake`" in edit for edit in message.edits),
             message.edits,
@@ -619,7 +630,7 @@ class ExtenderLifecycleTests(unittest.TestCase):
             return client.messages[0][3]
 
         message = asyncio.run(scenario())
-        self.assertIsNotNone(self.loader.registry.get("plugins.fake"))
+        self.assertIsNotNone(self.core.registry.get("plugins.fake"))
         self.assertIn("Unload cancelled.", message.edits[-1])
 
     def test_confirm_unload_times_out(self):
@@ -632,7 +643,7 @@ class ExtenderLifecycleTests(unittest.TestCase):
             return client.messages[0][3]
 
         message = asyncio.run(scenario())
-        self.assertIsNotNone(self.loader.registry.get("plugins.fake"))
+        self.assertIsNotNone(self.core.registry.get("plugins.fake"))
         self.assertIn("timed out", message.edits[-1])
 
     def test_confirm_unload_rejects_strangers(self):
@@ -650,7 +661,7 @@ class ExtenderLifecycleTests(unittest.TestCase):
 
         stranger, message = asyncio.run(scenario())
         stranger.answer.assert_awaited()
-        self.assertIsNotNone(self.loader.registry.get("plugins.fake"))
+        self.assertIsNotNone(self.core.registry.get("plugins.fake"))
         self.assertEqual(message.edits, [])
 
     def test_core_plugin_commands_wire_hre_surfaces(self):

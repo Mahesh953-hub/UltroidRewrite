@@ -98,3 +98,4 @@ def load_addons(plugin_name):
         except Exception as em:
             LOGS.info(f"{__name__} Exception in load_addons {em}")
             pass
+    return mod

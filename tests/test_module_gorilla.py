@@ -157,6 +157,7 @@ def _guest_update(client, sender=OWNER):
     upd.query_id = "q1"
     upd.query = "print(1)"
     upd.message = Message(
+        date=None,
         id=1, message="@bot print(1)", peer_id=PeerChat(5), from_id=PeerUser(sender)
     )
     return upd
@@ -167,6 +168,7 @@ def _business_update(client, text, sender=OWNER):
     upd._client = client
     upd.connection_id = "CONN-1"
     upd.message = Message(
+        date=None,
         id=77, message=text, peer_id=PeerUser(1), from_id=PeerUser(sender)
     )
     return upd
@@ -255,7 +257,7 @@ def test_business_callback_cancels_the_matching_exec_task():
     upd.user_id = OWNER
     upd.connection_id = "CONN-1"
     upd.data = b"0"
-    upd.message = Message(id=123, peer_id=PeerUser(1))
+    upd.message = Message(id=123, date=None, message=None, peer_id=PeerUser(1))
 
     async def scenario():
         task = asyncio.ensure_future(asyncio.sleep(30))
@@ -279,7 +281,7 @@ def test_business_callback_ignores_foreign_connection():
     upd.user_id = OWNER
     upd.connection_id = "CONN-1"
     upd.data = b"0"
-    upd.message = Message(id=5, peer_id=PeerUser(1))
+    upd.message = Message(id=5, date=None, message=None, peer_id=PeerUser(1))
     assert asyncio.run(modules.route(upd)) is False
 
 
@@ -338,7 +340,7 @@ def test_guest_answer_always_answers_when_no_matching_inline_handler(monkeypatch
         async def article(self, *a, **k):
             return "ARTICLE"
 
-    monkeypatch.setattr(_gorilla, "InlineBuilder", StubInline)
+    monkeypatch.setattr(_gorilla, "InlineResults", StubInline)
 
     sent = asyncio.run(Modules().answer(upd, "article", "T", text="x"))
     assert sent == "sent"

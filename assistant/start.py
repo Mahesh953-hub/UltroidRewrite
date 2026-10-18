@@ -5,55 +5,83 @@
 # PLease read the GNU Affero General Public License in
 # <https://www.github.com/TeamUltroid/Ultroid/blob/main/LICENSE/>.
 
+import html
 import os
+from collections import OrderedDict
 from datetime import datetime as _dt
 
+from pytz import UnknownTimeZoneError
 from pytz import timezone as tz
-from telethon import Button, events
+from telethon import events
 from telethon.errors.rpcerrorlist import MessageDeleteForbiddenError
-from telethon.tl import functions, types as tl_types
-from telethon.utils import get_display_name
+from telethon.tl import functions
+from telethon.tl import types as tl_types
+from telethon.utils import get_display_name, resolve_bot_file_id
 
-from pyUltroid._misc import SUDO_M, owner_and_sudos
-from pyUltroid.dB.base import KeyManager
-from strings import get_string
 from custom.tg import ikm
-from custom.fmt import fmtmsg, rawhtml
-
-from . import *
-from ._cbs import cb, cb_exact_pattern
+from pyUltroid import HNDLR, asst, udB, ultroid_bot
+from pyUltroid._core.richmsg import coerce_to_rich_markup
+from pyUltroid._core.richmsg import send_rich
+from pyUltroid._misc import SUDO_M, owner_and_sudos
+from pyUltroid._misc._assistant import asst_cmd, callback
+from pyUltroid.dB.base import KeyManager
 from pyUltroid.fns import fns
+from pyUltroid.startup.logger import LOGS
+from pyUltroid.version import ultroid_version
+from strings import get_string
+
+from . import OWNER_ID, OWNER_NAME, setit
+from ._cbs import cb, cb_exact_pattern
+from .rich_pages import body_page, edit_callback_page, rich_page
 
 SETTER = cb("assistant", "start", "setter")
 MAIN_MENU = cb("assistant", "start", "mainmenu")
+_START_EVENTS = OrderedDict()
+_START_EVENT_LIMIT = 512
+
+
+def _claim_start_event(event):
+    """Suppress a repeated delivery of the same Telegram /start update."""
+    message = getattr(event, "message", None)
+    message_id = getattr(message, "id", None)
+    if message_id is None:
+        return True
+    key = (
+        getattr(event, "chat_id", None),
+        getattr(event, "sender_id", None),
+        message_id,
+    )
+    if key in _START_EVENTS:
+        return False
+    _START_EVENTS[key] = None
+    while len(_START_EVENTS) > _START_EVENT_LIMIT:
+        _START_EVENTS.popitem(last=False)
+    return True
+
+
+def _valid_timezone(value):
+    """Return a trimmed IANA timezone name, or ``None`` for invalid input."""
+    name = str(value or "").strip()
+    if not name:
+        return None
+    try:
+        tz(name)
+    except UnknownTimeZoneError:
+        return None
+    return name
 
 
 def _cbstuffs_menu(key):
     return cb("assistant", "callbacks", "menu", key)
 
 
-_MDV3_ESCAPE_CHARS = "_*[]()~`>-|"
+def _html_body(body):
+    markup = coerce_to_rich_markup(str(body), parse_mode="mdv3")
+    return markup.text if markup else html.escape(str(body))
 
 
-def _mdv3_escape(text):
-    """Backslash-escape MarkdownV3 entity delimiters in *text* (owner names)."""
-    return "".join("\\" + ch if ch in _MDV3_ESCAPE_CHARS else ch for ch in str(text))
-
-
-def _rich_menu(head, body):
-    try:
-        from pyUltroid._core.entities import RICH_MD
-
-        rich = bool(getattr(RICH_MD, "available", False))
-    except Exception:
-        rich = False
-        RICH_MD = None
-    if rich:
-        return (
-            f"**{_mdv3_escape(head)}**\n\n**> {_mdv3_escape(body)}",
-            RICH_MD,
-        )
-    return fmtmsg(head, msgs=body), "v2"
+def _rich_menu(head, body, *, media=None):
+    return body_page(head, _html_body(body), media=media)
 
 
 def _settings_configured(key):
@@ -86,13 +114,72 @@ def _settings_configured(key):
     return False
 
 
-Owner_info_msg = udB.get_key("BOT_INFO_START")
-custom_info = True
-if Owner_info_msg is None:
-    custom_info = False
-    Owner_info_msg = f"""
+def _settings_sections():
+    return (
+        ("API Keys", "Configure image, AI, OCR, and search service credentials."),
+        ("Chat Bot", "Toggle the bot and edit its welcome, info, media, and subscription settings."),
+        ("Alive", "Customize the assistant's alive message and media."),
+        ("PM Permit", "Control the private-message guard and its options."),
+        ("Features", "Configure logging, sudo, handlers, plugins, and helper options."),
+        ("VC Song Bot", "Set the voice-chat bot session."),
+    )
+
+
+def _settings_page():
+    return rich_page(
+        "Assistant Settings",
+        _settings_sections(),
+        description="Choose a section below. Credentials and session values stay hidden.",
+        columns=("Section", "What it does"),
+        total=6,
+    )
+
+
+def _owner_home_page(name):
+    actions = (
+        ("Language", "Choose the assistant's display language."),
+        ("Settings", "Configure assistant features and services."),
+        ("Stats", "View the number of registered assistant users."),
+        ("Broadcast", "Send a message to registered assistant users."),
+        ("Timezone", "Set the timezone used by the assistant."),
+    )
+    return rich_page(
+        f"Welcome, {name}",
+        actions,
+        description=_plain_text(get_string("ast_3").format(name)),
+        columns=("Action", "What it does"),
+        total=len(actions),
+    )
+
+
+def _plain_text(value):
+    """Remove simple Markdown markers before inserting a plain table cell."""
+    text = str(value)
+    for marker in ("**", "__", "~~", "`", "*"):
+        text = text.replace(marker, "")
+    return text
+
+
+def _start_media_reference():
+    """Resolve the saved Telegram file ID to an already-uploaded RichFile source."""
+    file_id = udB.get_key("STARTMEDIA")
+    if not file_id:
+        return None
+    try:
+        media = resolve_bot_file_id(file_id)
+    except (TypeError, ValueError):
+        return None
+    if isinstance(media, tl_types.Photo):
+        return ("photo", media, None)
+    if isinstance(media, tl_types.Document):
+        return ("document", media, None)
+    return None
+
+
+def _default_owner_info():
+    return f"""
 **Owner** - {OWNER_NAME}
-**OwnerID** - `{OWNER_ID}`
+**OwnerID** - {OWNER_ID}
 
 **Message Forwards** - {udB.get_key("PMBOT")}
 
@@ -100,75 +187,105 @@ if Owner_info_msg is None:
 """
 
 
+def _owner_info_state():
+    """Return (text, custom, visible), reading the setting at use time."""
+    value = udB.get_key("BOT_INFO_START")
+    if value is None:
+        return _default_owner_info(), False, True
+    if value is False or (isinstance(value, str) and value.strip().lower() == "false"):
+        return "", True, False
+    text = str(value)
+    return text, True, bool(text.strip())
+
+
+class _SafeFormat(dict):
+    def __missing__(self, key):
+        return "{" + str(key) + "}"
+
+
+def _safe_format(text, **values):
+    try:
+        return str(text).format_map(_SafeFormat(values))
+    except (TypeError, ValueError):
+        return str(text)
+
+
+# Keep historical module-level names, while callbacks read the current setting.
+Owner_info_msg, custom_info, _owner_info_visible = _owner_info_state()
+
+
 def _settings_keyboard():
     return ikm(
         [
             [
                 (
-                    "API Kᴇʏs",
+                    "API Keys",
                     _cbstuffs_menu("apiset"),
-                    "success" if _settings_configured("apiset") else "primary",
+                    "success" if _settings_configured("apiset") else None,
                 ),
                 (
-                    "Pᴍ Bᴏᴛ",
+                    "Chat Bot",
                     _cbstuffs_menu("chatbot"),
-                    "success" if _settings_configured("chatbot") else "primary",
+                    "success" if _settings_configured("chatbot") else None,
                 ),
             ],
             [
                 (
-                    "Aʟɪᴠᴇ",
+                    "Alive",
                     _cbstuffs_menu("alive_customisation"),
                     (
                         "success"
                         if _settings_configured("alive_customisation")
-                        else "primary"
+                        else None
                     ),
                 ),
                 (
-                    "PᴍPᴇʀᴍɪᴛ",
+                    "PM Permit",
                     _cbstuffs_menu("pm_settings"),
-                    "success" if _settings_configured("pm_settings") else "primary",
+                    "success" if _settings_configured("pm_settings") else None,
                 ),
             ],
             [
                 (
-                    "Fᴇᴀᴛᴜʀᴇs",
+                    "Features",
                     _cbstuffs_menu("othervars"),
-                    "success" if _settings_configured("othervars") else "primary",
+                    "success" if _settings_configured("othervars") else None,
                 ),
                 (
-                    "VC Sᴏɴɢ Bᴏᴛ",
+                    "VC Song Bot",
                     _cbstuffs_menu("vc_menu"),
-                    "success" if _settings_configured("vc_menu") else "primary",
+                    "success" if _settings_configured("vc_menu") else None,
                 ),
             ],
-            [("« Bᴀᴄᴋ", MAIN_MENU, "danger")],
+            [("Back", MAIN_MENU, "primary")],
         ],
-        icon=True,
+        icon=False,
     )
 
 
 _start = ikm(
     [
         [
-            ("Lᴀɴɢᴜᴀɢᴇ 🌐", cb("assistant", "lang", "menu"), "primary"),
-            ("SᴇᴛᴛɪNGs ⚙️", SETTER, "primary"),
+            ("Language", cb("assistant", "lang", "menu"), "primary"),
+            ("Settings", SETTER, "primary"),
         ],
         [
-            ("Sᴛᴀᴛs ✨", "states", "primary"),
-            ("Bʀᴏᴀᴅᴄᴀsᴛ 📻", "bcast", "primary"),
+            ("Stats", "states", "primary"),
+            ("Broadcast", "bcast", "primary"),
         ],
-        [("TɪᴍᴇZᴏɴᴇ 🌎", "tz", "primary")],
+        [("Timezone", "tz", "primary")],
     ],
-    icon=True,
+    icon=False,
 )
 
 
 async def _set_bot_profile():
     if not asst:
         return
-    description = udB.get_key("BOT_INFO_START") or (
+    description, _custom, visible = _owner_info_state()
+    if not visible:
+        description = ""
+    description = description or (
         "Manage your Ultroid userbot from chat, or open the Mini App "
         "settings dashboard below."
     )
@@ -296,17 +413,20 @@ if asst:
 
 @callback("ownerinfo")
 async def own(event):
-    msg = Owner_info_msg.format(
+    info_text, is_custom, visible = _owner_info_state()
+    if not visible:
+        return await event.answer("The bot info message has been disabled.", alert=True)
+    msg = _safe_format(
+        info_text,
         mention=fns.inline_mention(event.sender),
         me=fns.inline_mention(ultroid_bot.me),
     )
-    if custom_info:
-        msg += "\n\n• Powered by **@TeamUltroid**"
-    await event.edit(
-        fmtmsg("Owner Information 👤", msgs=msg),
-        buttons=ikm([("Close ❌", "closeit", "danger")], icon=True),
-        link_preview=False,
-        parse_mode="v2",
+    if is_custom:
+        msg += "\n\nPowered by [@TeamUltroid](https://t.me/TeamUltroid)"
+    await edit_callback_page(
+        event,
+        _rich_menu("Owner Information", msg),
+        buttons=ikm([("Close", "closeit", None)], icon=False),
     )
 
 
@@ -320,74 +440,103 @@ async def closet(lol):
 
 @asst_cmd(pattern="start( (.*)|$)", forwards=False, func=lambda x: not x.is_group)
 async def ultroid(event):
+    if not _claim_start_event(event):
+        return
     args = event.pattern_match.group(1).strip()
     keym = KeyManager("BOT_USERS", cast=list)
     if not keym.contains(event.sender_id) and event.sender_id not in owner_and_sudos():
         keym.add(event.sender_id)
         kak_uiw = udB.get_key("OFF_START_LOG")
-        if not kak_uiw or kak_uiw != True:
-            msg = f"{fns.inline_mention(event.sender)} `[{event.sender_id}]` started your [Assistant bot](@{asst.me.username})."
-            btn_list = [("Info 👤", "info_stub", "primary")]
+        if kak_uiw != True:  # noqa: E712 - preserve legacy bool-like config semantics
+            msg = f"{fns.inline_mention(event.sender)} [{event.sender_id}] started your [Assistant bot](@{asst.me.username})."
+            btn_list = [("Info", "info_stub", "primary")]
             if event.sender.username:
-                btn_list.append(
-                    ("User 🔗", "url", f"tg://user?id={event.sender_id}", "green")
-                )
-            await event.client.send_message(
-                udB.get_key("LOG_CHANNEL"), msg, buttons=ikm([btn_list], icon=True)
-            )
+                btn_list.append(("User", "url", f"tg://user?id={event.sender_id}"))
+            log_channel = udB.get_key("LOG_CHANNEL")
+            if log_channel:
+                try:
+                    await event.client.send_message(
+                        log_channel, msg, buttons=ikm([btn_list], icon=False)
+                    )
+                except Exception as exc:
+                    LOGS.warning(
+                        "assistant.start: visitor log could not be sent (%s).",
+                        exc.__class__.__name__,
+                    )
     if event.sender_id not in SUDO_M.fullsudos:
         ok = ""
         me = fns.inline_mention(ultroid_bot.me)
         mention = fns.inline_mention(event.sender)
+        _info, _custom, show_info = _owner_info_state()
+        info_button = (
+            ikm([("Info", "ownerinfo", "primary")], icon=False) if show_info else None
+        )
         if args and args != "set":
-            await fns.get_stored_file(event, args)
+            stored = await fns.get_stored_file(event, args)
+            if stored is not None:
+                return stored
         if not udB.get_key("STARTMSG"):
             if udB.get_key("PMBOT"):
                 ok = "You can contact my master using this bot!!\n\nSend your Message, I will Deliver it To Master."
-            await event.reply(
-                fmtmsg(
-                    "✨ Ultroid Assistant ✨",
-                    msgs=f"Hey there {mention}, this is Ultroid Assistant of {me}!\n\n{ok}",
-                ),
-                file=udB.get_key("STARTMEDIA"),
-                buttons=(
-                    ikm([("Info. 👤", "ownerinfo", "primary")], icon=True)
-                    if Owner_info_msg
-                    else None
-                ),
-                parse_mode="v2",
+            content = _rich_menu(
+                "Ultroid Assistant",
+                f"Hey there {mention}, this is Ultroid Assistant of {me}!\n\n{ok}",
+                media=_start_media_reference(),
+            )
+            await send_rich(
+                event.client,
+                event.chat_id,
+                content,
+                reply_to=event,
+                buttons=info_button,
+                link_preview=False,
             )
         else:
-            custom_msg = udB.get_key("STARTMSG").format(me=me, mention=mention)
-            await event.reply(
-                fmtmsg("✨ Ultroid Assistant ✨", msgs=custom_msg),
-                file=udB.get_key("STARTMEDIA"),
-                buttons=(
-                    ikm([("Info. 👤", "ownerinfo", "primary")], icon=True)
-                    if Owner_info_msg
-                    else None
-                ),
-                parse_mode="v2",
+            custom_msg = _safe_format(udB.get_key("STARTMSG"), me=me, mention=mention)
+            content = _rich_menu(
+                "Ultroid Assistant", custom_msg, media=_start_media_reference()
+            )
+            await send_rich(
+                event.client,
+                event.chat_id,
+                content,
+                reply_to=event,
+                buttons=info_button,
+                link_preview=False,
             )
     else:
         name = get_display_name(event.sender)
         if args == "set":
-            _text, _pm = _rich_menu("Settings ⚙️", "Choose from the below options:")
-            await event.reply(
-                _text,
+            await send_rich(
+                event.client,
+                event.chat_id,
+                _settings_page(),
+                reply_to=event,
                 buttons=_settings_keyboard(),
-                parse_mode=_pm,
+                link_preview=False,
             )
         elif args:
-            await fns.get_stored_file(event, args)
-        else:
-            _text, _pm = _rich_menu(
-                f"Welcome, {name}! ✨", get_string("ast_3").format(name)
-            )
-            await event.reply(
-                _text,
+            stored = await fns.get_stored_file(event, args)
+            if stored is not None:
+                return stored
+            # Unrecognized start payloads (including the public ``start``
+            # help deep link) should land on the normal owner welcome menu.
+            await send_rich(
+                event.client,
+                event.chat_id,
+                _owner_home_page(name),
+                reply_to=event,
                 buttons=_start,
-                parse_mode=_pm,
+                link_preview=False,
+            )
+        else:
+            await send_rich(
+                event.client,
+                event.chat_id,
+                _owner_home_page(name),
+                reply_to=event,
+                buttons=_start,
+                link_preview=False,
             )
 
 
@@ -403,27 +552,25 @@ async def ekekdhdb(e):
     func=lambda x: not x.is_group,
 )
 async def ultroid_menu(event):
-    _text, _pm = _rich_menu(
-        f"Welcome back, {OWNER_NAME}! ✨", get_string("ast_3").format(OWNER_NAME)
-    )
-    await event.edit(
-        _text,
+    await edit_callback_page(
+        event,
+        _owner_home_page(OWNER_NAME),
         buttons=_start,
-        parse_mode=_pm,
     )
 
 
 @callback("states", owner=True)
 async def botstat(event):
     ok = len(udB.get_key("BOT_USERS") or [])
-    msg = """Ultroid Assistant - Stats
-Total Users - {}""".format(
-        ok,
-    )
-    await event.edit(
-        fmtmsg("Stats 📊", data={"Total Users": ok}),
-        buttons=ikm([("« Bᴀᴄᴋ", MAIN_MENU, "danger")], icon=True),
-        parse_mode="v2",
+    await edit_callback_page(
+        event,
+        rich_page(
+            "Assistant Stats",
+            [("Registered users", str(ok))],
+            columns=("Metric", "Total"),
+            total=1,
+        ),
+        buttons=ikm([("Back", MAIN_MENU, None)], icon=False),
     )
 
 
@@ -431,29 +578,37 @@ Total Users - {}""".format(
 async def bdcast(event):
     keym = KeyManager("BOT_USERS", cast=list)
     total = keym.count()
-    await event.edit(
-        fmtmsg("Broadcast 📻", msgs=f"• Initiating broadcast to {total} users."),
-        parse_mode="v2",
+    await edit_callback_page(
+        event,
+        body_page("Broadcast", f"<p>Initiating broadcast to {total} users.</p>", total=1),
     )
     async with event.client.conversation(OWNER_ID) as conv:
-        await conv.send_message(
-            fmtmsg(
-                "Broadcast 📻",
-                msgs="Enter your broadcast message.\nUse /cancel to stop the broadcast.",
+        prompt = await send_rich(
+            event.client,
+            conv.chat_id,
+            body_page(
+                "Broadcast",
+                "<p>Enter your broadcast message.</p><p>Use /cancel to stop.</p>",
             ),
-            parse_mode="v2",
+            link_preview=False,
         )
-        response = await conv.get_response()
-        if response.message == "/cancel":
-            return await conv.send_message(
-                fmtmsg("Cancelled ❌", msgs="Nothing was changed."),
-                parse_mode="v2",
+        response = await conv.get_response(prompt)
+        cancel_command = str(response.message or "").strip().split(maxsplit=1)[0]
+        if cancel_command.split("@", 1)[0].casefold() == "/cancel":
+            return await send_rich(
+                event.client,
+                conv.chat_id,
+                body_page("Broadcast cancelled", "<p>Nothing was changed.</p>"),
+                buttons=ikm([("Back", MAIN_MENU, "primary")], icon=False),
+                link_preview=False,
             )
         success = 0
         fail = 0
-        await conv.send_message(
-            fmtmsg("Broadcast 📻", msgs=f"Starting a broadcast to {total} users..."),
-            parse_mode="v2",
+        await send_rich(
+            event.client,
+            conv.chat_id,
+            body_page("Broadcast", f"<p>Starting a broadcast to {total} users.</p>"),
+            link_preview=False,
         )
         start = _dt.now()
         for i in keym.get():
@@ -464,27 +619,30 @@ async def bdcast(event):
                 fail += 1
         end = _dt.now()
         time_taken = (end - start).seconds
-        await conv.send_message(
-            fmtmsg(
-                "Broadcast Completed 📻",
-                {
-                    "Time Taken": f"{time_taken} seconds",
-                    "Total Users": str(total),
-                    "Successful": f"{success} users",
-                    "Failed": f"{fail} users",
-                },
+        await send_rich(
+            event.client,
+            conv.chat_id,
+            rich_page(
+                "Broadcast Complete",
+                [
+                    ("Time taken", f"{time_taken} seconds"),
+                    ("Total users", str(total)),
+                    ("Successful", f"{success} users"),
+                    ("Failed", str(fail)),
+                ],
+                columns=("Result", "Count"),
+                total=4,
             ),
-            parse_mode="v2",
+            link_preview=False,
         )
 
 
 @callback(cb_exact_pattern("assistant", "start", "setter"), owner=True)
 async def setting(event):
-    _text, _pm = _rich_menu("Settings ⚙️", "Choose from the below options:")
-    await event.edit(
-        _text,
+    await edit_callback_page(
+        event,
+        _settings_page(),
         buttons=_settings_keyboard(),
-        parse_mode=_pm,
     )
 
 
@@ -495,38 +653,62 @@ async def timezone_(event):
     var = "TIMEZONE"
     name = "Timezone"
     async with event.client.conversation(pru) as conv:
-        await conv.send_message(
-            fmtmsg(
+        await send_rich(
+            event.client,
+            conv.chat_id,
+            body_page(
                 name,
-                msgs="Send your timezone from the list below.",
-                data={
-                    "Check From Here": rawhtml(
-                        '<a href="http://www.timezoneconverter.com/cgi-bin/findzone.tzc">timezoneconverter.com</a>'
-                    )
-                },
+                '<p>Send an IANA timezone name. Examples: <code>Asia/Kolkata</code>, '
+                '<code>Europe/London</code>, <code>America/New_York</code>, or '
+                '<code>UTC</code>.</p><p><a href="https://www.timezoneconverter.com/cgi-bin/findzone.tzc">Browse timezone names</a>. Send <code>/cancel</code> to stop.</p>',
+                total=4,
             ),
-            parse_mode="v2",
+            link_preview=False,
         )
-        response = conv.wait_event(events.NewMessage(chats=pru))
-        response = await response
-        themssg = response.message.message
-        if themssg == "/cancel":
-            return await conv.send_message(
-                fmtmsg("Cancelled ❌", msgs="Nothing was changed."),
-                buttons=ikm([("« Bᴀᴄᴋ", MAIN_MENU, "danger")], icon=True),
-                parse_mode="v2",
+        while True:
+            response = await conv.wait_event(events.NewMessage(chats=pru))
+            themssg = str(response.message.message or "").strip()
+            cancel_command = (
+                themssg.split(maxsplit=1)[0].split("@", 1)[0] if themssg else ""
             )
-        try:
-            tz(themssg)
-            await setit(event, var, themssg)
-            await conv.send_message(
-                fmtmsg("Timezone Changed ✅", msgs=f"{name} changed to {themssg}"),
-                buttons=ikm([("« Bᴀᴄᴋ", MAIN_MENU, "danger")], icon=True),
-                parse_mode="v2",
-            )
-        except BaseException:
-            await conv.send_message(
-                fmtmsg("Error ❌", msgs="Wrong TimeZone, Try again"),
-                buttons=ikm([("« Bᴀᴄᴋ", MAIN_MENU, "danger")], icon=True),
-                parse_mode="v2",
+            if cancel_command.casefold() == "/cancel":
+                return await send_rich(
+                    event.client,
+                    conv.chat_id,
+                    body_page(
+                        "Timezone update cancelled", "<p>Nothing was changed.</p>"
+                    ),
+                    buttons=ikm([("Back", MAIN_MENU, None)], icon=False),
+                    link_preview=False,
+                )
+
+            timezone_name = _valid_timezone(themssg)
+            if timezone_name is None:
+                await send_rich(
+                    event.client,
+                    conv.chat_id,
+                    body_page(
+                        "Timezone not recognized",
+                        "<p>Use an IANA name such as <code>Asia/Kolkata</code>, "
+                        "<code>Europe/London</code>, <code>America/New_York</code>, "
+                        "or <code>UTC</code>.</p><p>Try another value, or send "
+                        "<code>/cancel</code> to stop.</p>",
+                        total=4,
+                    ),
+                    link_preview=False,
+                )
+                continue
+
+            await setit(event, var, timezone_name)
+            return await send_rich(
+                event.client,
+                conv.chat_id,
+                body_page(
+                    "Timezone updated",
+                    f"<p>{html.escape(name)} changed to "
+                    f"<code>{html.escape(timezone_name)}</code>.</p>",
+                    total=1,
+                ),
+                buttons=ikm([("Back", MAIN_MENU, None)], icon=False),
+                link_preview=False,
             )

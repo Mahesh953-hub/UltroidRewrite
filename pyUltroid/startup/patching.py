@@ -74,7 +74,7 @@ async def eor(
 ):
     """Edit Or Reply helper method patched onto Message."""
     if spoil and text:
-        from .._core.entities import spoiler
+        from custom.entities import spoiler
 
         text, spoiler_entities = spoiler(text)
         existing_entities = args.get("formatting_entities")

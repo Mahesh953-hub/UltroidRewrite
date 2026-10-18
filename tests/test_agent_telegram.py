@@ -8,6 +8,7 @@ prompt can never receive ``"('hi', [...])"``.
 from __future__ import annotations
 
 import asyncio
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
@@ -97,7 +98,7 @@ def test_int_id_is_not_mistaken_for_a_message():
 def test_fork_supports_colour_styles():
     """Guards the premise: the pinned fork styles every Button.*."""
     for style in sorted(BUTTON_STYLES):
-        button = Button.inline("x", b"d", style=style, icon="*")
+        button = Button.inline("x", b"d", style=style, icon=123)
         assert isinstance(button.style, types.KeyboardButtonStyle)
 
 
@@ -120,6 +121,7 @@ def test_rows_default_style_applies_only_when_absent():
 def test_rows_accept_ikm_tuple_shapes():
     rows = inline_rows([[("Docs", "url", "https://example.com", "primary", "L")]])
     assert isinstance(rows[0][0], types.KeyboardInlineButton)
+    assert isinstance(rows[0][0].type, types.InlineButtonTypeUrl)
 
 
 def test_rows_accept_bare_string_cells():
@@ -139,6 +141,40 @@ def test_prebuilt_button_is_not_mangled_by_tuple_handling():
     rows = inline_rows([[original, Button.inline("B", b"b")]])
     assert rows[0][0] is original
     assert rows[0][1].text == "B"
+
+
+def test_send_file_bridge_uses_current_chat_and_plain_caption(monkeypatch):
+    import pyUltroid
+
+    from pyUltroid.agent._tgbridge import send_file_via_master
+
+    captured = {}
+
+    async def send_file(entity, file_obj, **kwargs):
+        captured.update(entity=entity, file=file_obj, kwargs=kwargs)
+        return SimpleNamespace(id=77)
+
+    client = SimpleNamespace(send_file=send_file)
+    master = SimpleNamespace(route=lambda: client)
+    monkeypatch.setattr(pyUltroid, "master", master, raising=False)
+    attachment = BytesIO(b"A short poem.\n")
+    attachment.name = "poem.txt"
+
+    result = asyncio.run(
+        send_file_via_master(
+            attachment,
+            "-10042",
+            caption="A short poem",
+        )
+    )
+
+    assert result == {"ok": True, "route": "auto", "message_id": 77}
+    assert captured["entity"] == -10042
+    assert captured["file"] is attachment
+    assert captured["kwargs"] == {
+        "caption": "A short poem",
+        "parse_mode": None,
+    }
 
 
 def test_unknown_style_is_rejected_with_a_useful_message():

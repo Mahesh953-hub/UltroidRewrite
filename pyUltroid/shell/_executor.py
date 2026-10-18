@@ -20,11 +20,12 @@ import os
 import shlex
 import time
 from asyncio import subprocess as asproc
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
-from collections.abc import AsyncGenerator
 
 from pyUltroid.startup.logger import LOGS
+
 from ._session import HistoryEntry, ShellSession
 
 # ── Constants ──────────────────────────────────────────────────────────────
@@ -175,6 +176,11 @@ class ShellExecutor:
         stderr_buf = bytearray()
         timed_out = False
         exit_code = -1
+        truncated = False
+        total_captured = 0
+        capture_lock = asyncio.Lock()
+        proc = None
+        reader_tasks = []
 
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -186,28 +192,51 @@ class ShellExecutor:
                 limit=STREAM_CHUNK_SIZE * 4,
             )
 
+            async def _drain(reader, target):
+                nonlocal total_captured, truncated
+                while True:
+                    chunk = await reader.read(STREAM_CHUNK_SIZE)
+                    if not chunk:
+                        return
+                    async with capture_lock:
+                        remaining = MAX_OUTPUT_BYTES - total_captured
+                        kept = chunk[:remaining]
+                        target.extend(kept)
+                        total_captured += len(kept)
+                        if len(kept) < len(chunk):
+                            truncated = True
+
+            reader_tasks = [
+                asyncio.create_task(_drain(proc.stdout, stdout_buf)),
+                asyncio.create_task(_drain(proc.stderr, stderr_buf)),
+            ]
+            completion = asyncio.gather(proc.wait(), *reader_tasks)
             try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=timeout,
-                )
-                stdout_buf.extend(stdout_bytes)
-                stderr_buf.extend(stderr_bytes)
+                await asyncio.wait_for(asyncio.shield(completion), timeout=timeout)
                 exit_code = proc.returncode
 
             except TimeoutError:
                 timed_out = True
                 try:
                     proc.kill()
-                    await proc.wait()
-                except Exception:
+                except ProcessLookupError:
                     pass
+                await proc.wait()
+                await completion
                 exit_code = -1
                 LOGS.warning(
                     f"[HSS:EXEC] Timeout after {timeout}s  -  killed: {command[:60]!r}"
                 )
 
         except Exception as e:
+            if proc is not None and proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                await proc.wait()
+            if reader_tasks:
+                await asyncio.gather(*reader_tasks, return_exceptions=True)
             duration_ms = (time.time() - t0) * 1000
             LOGS.error(f"[HSS:EXEC] Subprocess error: {e}  -  cmd={command[:60]!r}")
             return ExecutionResult(
@@ -222,8 +251,7 @@ class ShellExecutor:
 
         duration_ms = (time.time() - t0) * 1000
 
-        # Decode and truncate
-        truncated = False
+        # Decode; the readers retain at most MAX_OUTPUT_BYTES combined.
         raw_out = bytes(stdout_buf)
         raw_err = bytes(stderr_buf)
 
@@ -301,12 +329,10 @@ class ShellExecutor:
                         break
                     yield chunk.decode("utf-8", errors="replace"), kind
 
-            # Interleave stdout and stderr
+            # Interleave stdout and stderr with a bounded queue.
             stdout_gen = _read_stream(proc.stdout, "stdout")
             stderr_gen = _read_stream(proc.stderr, "stderr")
-
-            # Drive both generators concurrently via queues
-            queue: asyncio.Queue = asyncio.Queue()
+            queue: asyncio.Queue = asyncio.Queue(maxsize=16)
 
             async def _feed(gen):
                 async for item in gen:
@@ -314,6 +340,8 @@ class ShellExecutor:
                 await queue.put(None)
 
             done_count = 0
+            emitted_bytes = 0
+            truncated = False
             tasks = [
                 asyncio.ensure_future(_feed(stdout_gen)),
                 asyncio.ensure_future(_feed(stderr_gen)),
@@ -324,9 +352,22 @@ class ShellExecutor:
                 if item is None:
                     done_count += 1
                 else:
-                    yield item
+                    text, kind = item
+                    raw = text.encode("utf-8")
+                    remaining = MAX_OUTPUT_BYTES - emitted_bytes
+                    visible = raw[:remaining]
+                    emitted_bytes += len(visible)
+                    if len(visible) < len(raw):
+                        truncated = True
+                    if visible:
+                        chunk = visible.decode("utf-8", errors="ignore")
+                        emitted_bytes -= len(visible) - len(chunk.encode("utf-8"))
+                        yield chunk, kind
 
+            await asyncio.gather(*tasks, return_exceptions=True)
             await proc.wait()
+            if truncated:
+                yield "\n[OUTPUT TRUNCATED]\n", "stderr"
 
         except Exception as e:
             LOGS.error(f"[HSS:EXEC:STREAM] Error: {e}")
